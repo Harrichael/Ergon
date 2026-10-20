@@ -4,10 +4,24 @@ use std::time::Duration;
 use anyhow::{Context, Result, bail};
 use rusqlite::Connection;
 
-/// Schema migrations, applied in order. Migration `i` brings the database to
-/// `PRAGMA user_version = i + 1`. Never edit a released migration; append.
-const MIGRATIONS: &[&str] = &[
-    r#"
+/// One schema change.
+enum Step {
+    Sql(&'static str),
+    /// For changes SQL alone can't make, like rebuilding a table to change a
+    /// constraint. Foreign keys are off while steps run and checked after.
+    #[allow(dead_code)] // None yet.
+    Code(fn(&Connection) -> rusqlite::Result<()>),
+}
+
+/// Schema migrations, applied in order. Step `i` brings the database to
+/// `PRAGMA user_version = i + 1`. Released steps are frozen (a test checks
+/// their hashes): never edit one, append another.
+const MIGRATIONS: &[Step] = &[Step::Sql(V1), Step::Sql(V2)];
+
+/// How many pre-upgrade backups to keep next to the database.
+const BACKUPS_KEPT: usize = 3;
+
+const V1: &str = r#"
 CREATE TABLE projects (
   id         INTEGER PRIMARY KEY,
   uuid       TEXT    NOT NULL UNIQUE,
@@ -43,8 +57,9 @@ CREATE TABLE task_deps (
 );
 
 CREATE INDEX task_deps_depends_on ON task_deps(depends_on);
-"#,
-    r#"
+"#;
+
+const V2: &str = r#"
 -- Children have no order in meaning, but keep a stable one for display.
 -- Existing children keep their creation order.
 ALTER TABLE tasks ADD COLUMN position INTEGER NOT NULL DEFAULT 0;
@@ -53,8 +68,7 @@ UPDATE tasks SET position = (
   WHERE s.parent_id = tasks.parent_id
     AND (s.created_at, s.id) < (tasks.created_at, tasks.id)
 );
-"#,
-];
+"#;
 
 /// `$ERGON_DB`, else `$XDG_DATA_HOME/ergon/ergon.db`, else
 /// `~/.local/share/ergon/ergon.db`.
@@ -81,47 +95,202 @@ pub fn open(path: &Path) -> Result<Connection> {
     }
     let conn =
         Connection::open(path).with_context(|| format!("opening database {}", path.display()))?;
+    // Before anything that locks, so a concurrent ergon waits instead of failing.
+    conn.busy_timeout(Duration::from_secs(5))?;
     conn.pragma_update(None, "journal_mode", "WAL")?;
-    configure(conn)
+    configure(conn, Some(path))
 }
 
 /// An in-memory database with the current schema, for tests.
 pub fn open_in_memory() -> Result<Connection> {
-    configure(Connection::open_in_memory()?)
+    configure(Connection::open_in_memory()?, None)
 }
 
-fn configure(mut conn: Connection) -> Result<Connection> {
+fn configure(conn: Connection, path: Option<&Path>) -> Result<Connection> {
     conn.busy_timeout(Duration::from_secs(5))?;
+    if let Some((from, backup)) = migrate(&conn, MIGRATIONS, path)?
+        && let Some(backup) = backup
+    {
+        eprintln!(
+            "ergon: upgraded the database from schema {from} to {}; the old one is at {}",
+            MIGRATIONS.len(),
+            backup.display()
+        );
+    }
     conn.pragma_update(None, "foreign_keys", true)?;
-    migrate(&mut conn)?;
     Ok(conn)
 }
 
-fn migrate(conn: &mut Connection) -> Result<()> {
-    let version: i64 = conn.pragma_query_value(None, "user_version", |r| r.get(0))?;
-    if version as usize > MIGRATIONS.len() {
+fn user_version(conn: &Connection) -> Result<usize> {
+    let v: i64 = conn.pragma_query_value(None, "user_version", |r| r.get(0))?;
+    Ok(v as usize)
+}
+
+/// Brings the schema up to date with `steps`, backing up an existing database
+/// at `path` first. Returns the version it started from and the backup, if it
+/// changed anything.
+fn migrate(
+    conn: &Connection,
+    steps: &[Step],
+    path: Option<&Path>,
+) -> Result<Option<(usize, Option<PathBuf>)>> {
+    if user_version(conn)? == steps.len() {
+        return Ok(None);
+    }
+    // Foreign keys can't be switched inside a transaction, and table
+    // rebuilds need them off.
+    conn.pragma_update(None, "foreign_keys", false)?;
+    // Take the write lock before reading the version: of two processes
+    // opening an old database, one migrates and the other then finds it done.
+    conn.execute_batch("BEGIN IMMEDIATE")?;
+    match migrate_locked(conn, steps, path) {
+        Ok(done) => {
+            conn.execute_batch("COMMIT")?;
+            Ok(done)
+        }
+        Err(e) => {
+            let _ = conn.execute_batch("ROLLBACK");
+            Err(e)
+        }
+    }
+}
+
+fn migrate_locked(
+    conn: &Connection,
+    steps: &[Step],
+    path: Option<&Path>,
+) -> Result<Option<(usize, Option<PathBuf>)>> {
+    let from = user_version(conn)?;
+    if from > steps.len() {
         bail!(
-            "database schema version {version} is newer than this ergon supports ({}); upgrade ergon",
-            MIGRATIONS.len()
+            "database schema version {from} is newer than this ergon supports ({}); upgrade ergon",
+            steps.len()
         );
     }
-    for (i, sql) in MIGRATIONS.iter().enumerate().skip(version as usize) {
-        let tx = conn.transaction()?;
-        tx.execute_batch(sql)
-            .with_context(|| format!("applying migration {}", i + 1))?;
-        tx.pragma_update(None, "user_version", (i + 1) as i64)?;
-        tx.commit()?;
+    if from == steps.len() {
+        return Ok(None);
     }
-    Ok(())
+    let backup = match path {
+        Some(path) if from > 0 => Some(backup(path, from)?),
+        _ => None,
+    };
+    for (i, step) in steps.iter().enumerate().skip(from) {
+        match step {
+            Step::Sql(sql) => conn.execute_batch(sql),
+            Step::Code(f) => f(conn),
+        }
+        .with_context(|| format!("applying migration {}", i + 1))?;
+    }
+    let broken: i64 = conn.query_row("SELECT COUNT(*) FROM pragma_foreign_key_check", [], |r| {
+        r.get(0)
+    })?;
+    if broken > 0 {
+        bail!("migrating left {broken} broken references; nothing was changed");
+    }
+    conn.pragma_update(None, "user_version", steps.len() as i64)?;
+    Ok(Some((from, backup)))
+}
+
+/// `<path><suffix>`, e.g. `ergon.db.v1.bak`.
+fn with_suffix(path: &Path, suffix: &str) -> PathBuf {
+    let mut s = path.as_os_str().to_owned();
+    s.push(suffix);
+    PathBuf::from(s)
+}
+
+/// Copies the database, as it is at schema `version`, to
+/// `<path>.v<version>.bak`, keeping only the newest few such backups. The
+/// caller holds the write lock, so the copy is the state it's about to change.
+fn backup(path: &Path, version: usize) -> Result<PathBuf> {
+    let dest = with_suffix(path, &format!(".v{version}.bak"));
+    let tmp = with_suffix(path, ".bak.tmp");
+    let _ = std::fs::remove_file(&tmp);
+    {
+        use rusqlite::backup::{Backup, StepResult};
+        // A connection of its own: the one holding the lock can't be read
+        // by a backup.
+        let src = Connection::open_with_flags(path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)?;
+        let mut out = Connection::open(&tmp)?;
+        match Backup::new(&src, &mut out)?.step(-1)? {
+            StepResult::Done => {}
+            other => bail!("backing up the database: {other:?}"),
+        }
+    }
+    std::fs::rename(&tmp, &dest)
+        .with_context(|| format!("backing up the database to {}", dest.display()))?;
+
+    let name = path.file_name().unwrap_or_default().to_string_lossy();
+    let prefix = format!("{name}.v");
+    let mut old: Vec<(usize, PathBuf)> = std::fs::read_dir(
+        dest.parent()
+            .filter(|d| !d.as_os_str().is_empty())
+            .unwrap_or(Path::new(".")),
+    )?
+    .filter_map(|e| e.ok())
+    .filter_map(|e| {
+        let file = e.file_name().to_string_lossy().into_owned();
+        let v = file
+            .strip_prefix(&prefix)?
+            .strip_suffix(".bak")?
+            .parse()
+            .ok()?;
+        Some((v, e.path()))
+    })
+    .collect();
+    old.sort_by_key(|(v, _)| std::cmp::Reverse(*v));
+    for (_, p) in old.into_iter().skip(BACKUPS_KEPT) {
+        let _ = std::fs::remove_file(p);
+    }
+    Ok(dest)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    fn user_version(conn: &Connection) -> usize {
-        conn.pragma_query_value(None, "user_version", |r| r.get::<_, i64>(0))
-            .unwrap() as usize
+    fn version(conn: &Connection) -> usize {
+        user_version(conn).unwrap()
+    }
+
+    /// Data written by each released schema version, oldest first.
+    const FIXTURES: &[(usize, &str)] = &[(1, include_str!("../tests/fixtures/v1.sql"))];
+
+    /// A database file at schema `v` holding `data`.
+    fn database_at(path: &Path, v: usize, data: &str) {
+        let conn = Connection::open(path).unwrap();
+        for step in &MIGRATIONS[..v] {
+            match step {
+                Step::Sql(sql) => conn.execute_batch(sql).unwrap(),
+                Step::Code(f) => f(&conn).unwrap(),
+            }
+        }
+        conn.execute_batch(data).unwrap();
+        conn.pragma_update(None, "user_version", v as i64).unwrap();
+    }
+
+    fn rows<T: rusqlite::types::FromSql>(conn: &Connection, sql: &str) -> Vec<T> {
+        let mut stmt = conn.prepare(sql).unwrap();
+        stmt.query_map([], |r| r.get(0))
+            .unwrap()
+            .collect::<rusqlite::Result<_>>()
+            .unwrap()
+    }
+
+    fn schema(conn: &Connection) -> Vec<String> {
+        rows(
+            conn,
+            "SELECT type || ' ' || name || ': ' || COALESCE(sql, '') FROM sqlite_master ORDER BY name",
+        )
+    }
+
+    fn files(dir: &Path) -> Vec<String> {
+        let mut names: Vec<String> = std::fs::read_dir(dir)
+            .unwrap()
+            .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+            .filter(|n| !n.ends_with("-wal") && !n.ends_with("-shm"))
+            .collect();
+        names.sort();
+        names
     }
 
     fn insert_project(conn: &Connection) -> i64 {
@@ -149,7 +318,7 @@ mod tests {
     #[test]
     fn migrates_to_latest() {
         let conn = open_in_memory().unwrap();
-        assert_eq!(user_version(&conn), MIGRATIONS.len());
+        assert_eq!(version(&conn), MIGRATIONS.len());
     }
 
     #[test]
@@ -158,7 +327,7 @@ mod tests {
         let path = dir.path().join("nested/ergon.db");
         drop(open(&path).unwrap());
         let conn = open(&path).unwrap();
-        assert_eq!(user_version(&conn), MIGRATIONS.len());
+        assert_eq!(version(&conn), MIGRATIONS.len());
         let mode: String = conn
             .pragma_query_value(None, "journal_mode", |r| r.get(0))
             .unwrap();
@@ -166,32 +335,186 @@ mod tests {
     }
 
     #[test]
-    fn positions_follow_creation_order() {
-        let mut conn = Connection::open_in_memory().unwrap();
-        conn.execute_batch(MIGRATIONS[0]).unwrap();
-        conn.pragma_update(None, "user_version", 1).unwrap();
+    fn upgrades_released_versions_keeping_data() {
+        let fresh = open_in_memory().unwrap();
+        for &(v, data) in FIXTURES {
+            let dir = tempfile::tempdir().unwrap();
+            let path = dir.path().join("ergon.db");
+            database_at(&path, v, data);
+            let count = |c: &Connection| -> Vec<i64> {
+                rows(
+                    c,
+                    "SELECT COUNT(*) FROM projects UNION ALL SELECT COUNT(*) FROM tasks
+                     UNION ALL SELECT COUNT(*) FROM task_deps",
+                )
+            };
+            let before = count(&Connection::open(&path).unwrap());
+
+            let conn = open(&path).unwrap();
+            assert_eq!(version(&conn), MIGRATIONS.len(), "from v{v}");
+            assert_eq!(count(&conn), before, "rows kept from v{v}");
+            assert_eq!(schema(&conn), schema(&fresh), "schema from v{v}");
+            let ok: Vec<String> = rows(&conn, "PRAGMA integrity_check");
+            assert_eq!(ok, ["ok"]);
+        }
+    }
+
+    #[test]
+    fn v2_numbers_children_in_creation_order() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("ergon.db");
+        database_at(&path, 1, FIXTURES[0].1);
+        let conn = open(&path).unwrap();
+        // Frontend was created after Backend; Docs after API, though its id is
+        // higher than Frontend's. The deleted task still gets a position.
+        let got: Vec<String> = rows(
+            &conn,
+            "SELECT slug || '@' || position FROM tasks WHERE project_id = 1 ORDER BY id",
+        );
+        assert_eq!(
+            got,
+            ["root@0", "T4AL@0", "6Ahd@0", "gJmw@1", "fEmH@1", "aAQk@0"]
+        );
+    }
+
+    #[test]
+    fn backs_up_before_upgrading() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("ergon.db");
+        database_at(&path, 1, FIXTURES[0].1);
+        drop(open(&path).unwrap());
+        drop(open(&path).unwrap());
+        assert_eq!(files(dir.path()), ["ergon.db", "ergon.db.v1.bak"]);
+
+        let backup = Connection::open(dir.path().join("ergon.db.v1.bak")).unwrap();
+        assert_eq!(version(&backup), 1);
+        let tasks: Vec<i64> = rows(&backup, "SELECT COUNT(*) FROM tasks");
+        assert_eq!(tasks, [8]);
+
+        // A new database has nothing to back up.
+        let fresh = tempfile::tempdir().unwrap();
+        drop(open(&fresh.path().join("ergon.db")).unwrap());
+        assert_eq!(files(fresh.path()), ["ergon.db"]);
+    }
+
+    #[test]
+    fn keeps_the_newest_backups() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("ergon.db");
+        for v in 1..=4 {
+            std::fs::write(dir.path().join(format!("ergon.db.v{v}.bak")), "").unwrap();
+        }
+        std::fs::write(dir.path().join("other.db.v1.bak"), "").unwrap();
+        drop(open(&path).unwrap());
+        backup(&path, 10).unwrap();
+        assert_eq!(
+            files(dir.path()),
+            [
+                "ergon.db",
+                "ergon.db.v10.bak",
+                "ergon.db.v3.bak",
+                "ergon.db.v4.bak",
+                "other.db.v1.bak"
+            ]
+        );
+    }
+
+    #[test]
+    fn concurrent_opens_migrate_once() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("ergon.db");
+        database_at(&path, 1, FIXTURES[0].1);
+        let barrier = std::sync::Barrier::new(8);
+        std::thread::scope(|s| {
+            let opens: Vec<_> = (0..8)
+                .map(|_| {
+                    s.spawn(|| {
+                        barrier.wait();
+                        open(&path).map(|c| version(&c))
+                    })
+                })
+                .collect();
+            for o in opens {
+                assert_eq!(o.join().unwrap().unwrap(), MIGRATIONS.len());
+            }
+        });
+        assert_eq!(files(dir.path()), ["ergon.db", "ergon.db.v1.bak"]);
+    }
+
+    /// FNV-1a, to notice edits to released steps.
+    fn hash(s: &str) -> u64 {
+        s.bytes().fold(0xcbf2_9ce4_8422_2325, |h, b| {
+            (h ^ b as u64).wrapping_mul(0x0100_0000_01b3)
+        })
+    }
+
+    #[test]
+    fn released_steps_are_frozen() {
+        // Append a hash when releasing a step; never change one.
+        const RELEASED: &[u64] = &[0xcd8d_2925_364c_ec89, 0x1c24_1903_3f02_e878];
+        let hashes: Vec<u64> = MIGRATIONS
+            .iter()
+            .map(|s| match s {
+                Step::Sql(sql) => hash(sql),
+                Step::Code(_) => 0,
+            })
+            .collect();
+        assert_eq!(&hashes[..RELEASED.len()], RELEASED, "{hashes:#x?}");
+    }
+
+    #[test]
+    fn code_steps_run_without_foreign_keys() {
+        // Rebuilding a table that others reference only works with foreign
+        // keys off.
+        fn rebuild(conn: &Connection) -> rusqlite::Result<()> {
+            conn.execute_batch(
+                "CREATE TABLE projects_new (
+                   id INTEGER PRIMARY KEY, uuid TEXT NOT NULL UNIQUE, name TEXT NOT NULL UNIQUE,
+                   created_at INTEGER NOT NULL, retired_at INTEGER);
+                 INSERT INTO projects_new SELECT * FROM projects;
+                 DROP TABLE projects;
+                 ALTER TABLE projects_new RENAME TO projects;",
+            )
+        }
+        let conn = open_in_memory().unwrap();
         let p = insert_project(&conn);
         insert_task(&conn, p, "root", None).unwrap();
-        let root = conn.last_insert_rowid();
-        for (slug, created) in [("Abcd", 5), ("Efgh", 3), ("Jkmn", 5)] {
-            insert_task(&conn, p, slug, Some(root)).unwrap();
-            conn.execute(
-                "UPDATE tasks SET created_at = ?1 WHERE slug = ?2",
-                rusqlite::params![created, slug],
+        let mut steps: Vec<Step> = MIGRATIONS
+            .iter()
+            .map(|s| match s {
+                Step::Sql(sql) => Step::Sql(sql),
+                Step::Code(f) => Step::Code(*f),
+            })
+            .collect();
+        steps.push(Step::Code(rebuild));
+        migrate(&conn, &steps, None).unwrap();
+        assert_eq!(version(&conn), steps.len());
+        let tasks: Vec<i64> = rows(&conn, "SELECT COUNT(*) FROM tasks");
+        assert_eq!(tasks, [1]);
+    }
+
+    #[test]
+    fn broken_references_roll_back() {
+        fn orphan(conn: &Connection) -> rusqlite::Result<()> {
+            conn.execute_batch(
+                "INSERT INTO tasks (project_id, slug, intent, created_at, updated_at)
+                 VALUES (999, 'root', 'x', 0, 0)",
             )
-            .unwrap();
         }
-        migrate(&mut conn).unwrap();
-        let mut stmt = conn
-            .prepare("SELECT slug, position FROM tasks ORDER BY slug")
-            .unwrap();
-        let rows: Vec<(String, i64)> = stmt
-            .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))
-            .unwrap()
-            .collect::<rusqlite::Result<_>>()
-            .unwrap();
-        let rows: Vec<(&str, i64)> = rows.iter().map(|(s, p)| (s.as_str(), *p)).collect();
-        assert_eq!(rows, [("Abcd", 1), ("Efgh", 0), ("Jkmn", 2), ("root", 0)]);
+        let conn = open_in_memory().unwrap();
+        let mut steps: Vec<Step> = MIGRATIONS
+            .iter()
+            .map(|s| match s {
+                Step::Sql(sql) => Step::Sql(sql),
+                Step::Code(f) => Step::Code(*f),
+            })
+            .collect();
+        steps.push(Step::Code(orphan));
+        let err = migrate(&conn, &steps, None).unwrap_err().to_string();
+        assert!(err.contains("broken references"), "{err}");
+        assert_eq!(version(&conn), MIGRATIONS.len());
+        let tasks: Vec<i64> = rows(&conn, "SELECT COUNT(*) FROM tasks");
+        assert_eq!(tasks, [0]);
     }
 
     #[test]
