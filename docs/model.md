@@ -20,8 +20,7 @@ model, its rules, and the CLI. It is also given verbatim to the planner session
 
 ## Identifiers
 
-- **Project name**: one or more of `A-Z a-z 0-9 _ -`. Renamable. Projects are
-  referenced internally by an integer id and externally by a UUID, so a rename
+- **Project name**: one or more of `A-Z a-z 0-9 _ -`. Renaming a project
   breaks nothing.
 - **Task slug**: 4 random characters from this 41-character alphabet, which
   omits look-alikes (`0 O o 1 l I 5 S s 2 Z z 8 B`, and the capitals
@@ -41,49 +40,31 @@ model, its rules, and the CLI. It is also given verbatim to the planner session
 
 **Current project**: the `--project <name>` flag if given. Otherwise ergon
 walks up from the working directory to the nearest `.ergon` file, which
-contains the project UUID on a single line. Otherwise it's an error. A
+identifies the project. Otherwise it's an error. A
 `project/slug` reference names its own project explicitly.
 
-## Schema
+## Fields
 
-```sql
-CREATE TABLE projects (
-  id         INTEGER PRIMARY KEY,
-  uuid       TEXT    NOT NULL UNIQUE,
-  name       TEXT    NOT NULL UNIQUE,
-  created_at INTEGER NOT NULL,          -- unix seconds
-  retired_at INTEGER                   -- NULL = active
-);
+A **project** has a name, a creation time, and may be retired.
 
-CREATE TABLE tasks (
-  id             INTEGER PRIMARY KEY,
-  project_id     INTEGER NOT NULL REFERENCES projects(id),
-  slug           TEXT    NOT NULL,
-  parent_id      INTEGER REFERENCES tasks(id),   -- NULL only for the root
-  intent         TEXT    NOT NULL,
-  status         TEXT CHECK (status IN ('todo','in_progress','landing','done','cancelled')),
-  priority       INTEGER CHECK (priority BETWEEN 0 AND 4),
-  claude_session TEXT,
-  claude_cwd     TEXT,
-  created_at     INTEGER NOT NULL,
-  updated_at     INTEGER NOT NULL,
-  deleted_at     INTEGER,                        -- soft delete
-  UNIQUE (project_id, slug),
-  CHECK ((claude_session IS NULL) = (claude_cwd IS NULL))
-);
+A **task** has:
 
-CREATE UNIQUE INDEX one_root_per_project ON tasks(project_id) WHERE parent_id IS NULL;
+- **slug**: its identifier within the project.
+- **parent**: the task it sits under. Only the root has none.
+- **intent**: free-form text. The first line, capped at 100 characters, is the
+  title.
+- **status**: optional; when unset, the task follows its parent (see
+  [Status](#status)).
+- **priority**: optional, `p0`–`p4`; when unset, it's inferred (see
+  [Priority](#priority)).
+- **dependencies**: the tasks it depends on.
+- **Claude session**: optional; a session id and the directory it was started
+  in (see [Claude sessions](#claude-sessions)).
+- **created** and **updated** times, and a **deleted** time if it's been
+  deleted.
 
-CREATE TABLE task_deps (
-  task_id    INTEGER NOT NULL REFERENCES tasks(id),
-  depends_on INTEGER NOT NULL REFERENCES tasks(id),
-  PRIMARY KEY (task_id, depends_on)
-);
-```
-
-The database is at `$ERGON_DB`, or `$XDG_DATA_HOME/ergon/ergon.db` (normally
-`~/.local/share/ergon/ergon.db`). It runs in WAL mode with a busy timeout, so
-concurrent `ergon` calls are safe.
+All reads and writes go through the `ergon` CLI. Never query or modify the
+database directly.
 
 ## Status
 
@@ -178,7 +159,7 @@ changes. Changes to its children or dependencies don't count.
 ## Deletion
 
 `ergon rm <ref> --subtasks N --dependents M` soft-deletes the task and every
-non-deleted descendant, stamping all of them with the same `deleted_at`.
+non-deleted descendant, all with the same deletion time.
 
 - `N` must equal the number of non-deleted descendants.
 - `M` must equal the number of distinct non-deleted tasks, outside the deleted
@@ -189,12 +170,11 @@ Deleted tasks are hidden everywhere, and dependencies on them count as
 satisfied. Their slugs stay reserved.
 
 `ergon restore <ref>` restores the task, its deleted ancestors, and the
-descendants that were deleted in the same `rm` (those with the same
-`deleted_at`). Restoring is subject to the invariants.
+descendants that were deleted in the same `rm`. Restoring is subject to the invariants.
 
 ## Projects
 
-Retiring a project only sets `retired_at`. It's hidden from `ergon project ls`
+Retiring a project only marks it as retired. It's hidden from `ergon project ls`
 (unless `--all` is given), but every command still works on it, and retiring
 changes nothing about its tasks.
 
