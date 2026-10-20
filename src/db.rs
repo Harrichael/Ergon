@@ -18,6 +18,8 @@ enum Step {
 /// their hashes): never edit one, append another.
 const MIGRATIONS: &[Step] = &[Step::Sql(V1), Step::Sql(V2)];
 
+const BUSY_TIMEOUT: Duration = Duration::from_secs(5);
+
 /// How many pre-upgrade backups to keep next to the database.
 const BACKUPS_KEPT: usize = 3;
 
@@ -96,9 +98,30 @@ pub fn open(path: &Path) -> Result<Connection> {
     let conn =
         Connection::open(path).with_context(|| format!("opening database {}", path.display()))?;
     // Before anything that locks, so a concurrent ergon waits instead of failing.
-    conn.busy_timeout(Duration::from_secs(5))?;
-    conn.pragma_update(None, "journal_mode", "WAL")?;
+    conn.busy_timeout(BUSY_TIMEOUT)?;
+    use_wal(&conn)?;
     configure(conn, Some(path))
+}
+
+/// Switches to WAL mode. That needs the database to itself, and SQLite won't
+/// wait for it with the busy timeout, so retry while another ergon has it.
+fn use_wal(conn: &Connection) -> Result<()> {
+    let mode: String = conn.pragma_query_value(None, "journal_mode", |r| r.get(0))?;
+    if mode.eq_ignore_ascii_case("wal") {
+        return Ok(());
+    }
+    let deadline = std::time::Instant::now() + BUSY_TIMEOUT;
+    loop {
+        match conn.pragma_update(None, "journal_mode", "WAL") {
+            Err(rusqlite::Error::SqliteFailure(e, _))
+                if e.code == rusqlite::ErrorCode::DatabaseBusy
+                    && std::time::Instant::now() < deadline =>
+            {
+                std::thread::sleep(Duration::from_millis(10));
+            }
+            r => return r.context("switching to WAL mode"),
+        }
+    }
 }
 
 /// An in-memory database with the current schema, for tests.
@@ -107,7 +130,7 @@ pub fn open_in_memory() -> Result<Connection> {
 }
 
 fn configure(conn: Connection, path: Option<&Path>) -> Result<Connection> {
-    conn.busy_timeout(Duration::from_secs(5))?;
+    conn.busy_timeout(BUSY_TIMEOUT)?;
     if let Some((from, backup)) = migrate(&conn, MIGRATIONS, path)?
         && let Some(backup) = backup
     {
@@ -134,15 +157,17 @@ fn migrate(
     steps: &[Step],
     path: Option<&Path>,
 ) -> Result<Option<(usize, Option<PathBuf>)>> {
-    if user_version(conn)? == steps.len() {
+    if user_version(conn).context("reading the schema version")? == steps.len() {
         return Ok(None);
     }
     // Foreign keys can't be switched inside a transaction, and table
     // rebuilds need them off.
-    conn.pragma_update(None, "foreign_keys", false)?;
+    conn.pragma_update(None, "foreign_keys", false)
+        .context("disabling foreign keys")?;
     // Take the write lock before reading the version: of two processes
     // opening an old database, one migrates and the other then finds it done.
-    conn.execute_batch("BEGIN IMMEDIATE")?;
+    conn.execute_batch("BEGIN IMMEDIATE")
+        .context("locking the database to upgrade it")?;
     match migrate_locked(conn, steps, path) {
         Ok(done) => {
             conn.execute_batch("COMMIT")?;
@@ -255,9 +280,11 @@ mod tests {
     /// Data written by each released schema version, oldest first.
     const FIXTURES: &[(usize, &str)] = &[(1, include_str!("../tests/fixtures/v1.sql"))];
 
-    /// A database file at schema `v` holding `data`.
+    /// A database file at schema `v` holding `data`, in WAL mode as ergon
+    /// always left it.
     fn database_at(path: &Path, v: usize, data: &str) {
         let conn = Connection::open(path).unwrap();
+        conn.pragma_update(None, "journal_mode", "WAL").unwrap();
         for step in &MIGRATIONS[..v] {
             match step {
                 Step::Sql(sql) => conn.execute_batch(sql).unwrap(),
@@ -435,10 +462,35 @@ mod tests {
                 })
                 .collect();
             for o in opens {
-                assert_eq!(o.join().unwrap().unwrap(), MIGRATIONS.len());
+                let v = o.join().unwrap().map_err(|e| format!("{e:#}")).unwrap();
+                assert_eq!(v, MIGRATIONS.len());
             }
         });
         assert_eq!(files(dir.path()), ["ergon.db", "ergon.db.v1.bak"]);
+    }
+
+    #[test]
+    fn concurrent_first_opens() {
+        for _ in 0..10 {
+            let dir = tempfile::tempdir().unwrap();
+            let path = dir.path().join("ergon.db");
+            let barrier = std::sync::Barrier::new(8);
+            std::thread::scope(|s| {
+                let opens: Vec<_> = (0..8)
+                    .map(|_| {
+                        s.spawn(|| {
+                            barrier.wait();
+                            open(&path)
+                                .map(|c| version(&c))
+                                .map_err(|e| format!("{e:#}"))
+                        })
+                    })
+                    .collect();
+                for o in opens {
+                    assert_eq!(o.join().unwrap().unwrap(), MIGRATIONS.len());
+                }
+            });
+        }
     }
 
     /// FNV-1a, to notice edits to released steps.
