@@ -1,0 +1,88 @@
+# Dependencies and the cycle rules.
+
+$ ergon init demo Root --no-launch
+Created project demo in $ROOT
+$ ergon add A
+qxpj
+$ ergon add A1 --parent qxpj
+FTFE
+$ ergon add B
+nHcx
+$ ergon add C
+pQyk
+
+$ ergon dep add qxpj nHcx
+$ ergon dep add qxpj nHcx
+error: demo/qxpj already depends on demo/nHcx
+[exit 1]
+$ ergon show qxpj
+demo/qxpj  A
+status:    todo
+priority:  p-
+blocked:   yes, waiting on demo/nHcx
+parent:    demo/root  Root
+created:   2025-10-09 08:53 (just now)
+updated:   2025-10-09 08:53 (just now)
+delete:    ergon rm demo/qxpj --subtasks 1 --dependents 0
+
+A
+
+Subtasks:
+  - FTFE  todo         A1
+
+Depends on:
+  - nHcx  todo         B
+$ ergon show nHcx
+demo/nHcx  B
+status:    todo
+priority:  p-
+blocked:   no
+parent:    demo/root  Root
+created:   2025-10-09 08:53 (just now)
+updated:   2025-10-09 08:53 (just now)
+delete:    ergon rm demo/nHcx --subtasks 0 --dependents 1
+
+B
+
+Dependents:
+  - qxpj  todo         A
+
+$ ergon dep add qxpj qxpj
+error: refused: demo/qxpj can't depend on itself
+[exit 1]
+$ ergon dep add FTFE qxpj
+error: refused: demo/FTFE can't depend on demo/qxpj, its ancestor
+[exit 1]
+$ ergon dep add qxpj FTFE
+error: refused: demo/qxpj can't depend on demo/FTFE, its subtask
+[exit 1]
+$ ergon dep add qxpj root
+error: refused: the root task can't have dependencies or dependents
+[exit 1]
+
+# Direct and indirect cycles. A1 inherits A's wait on B, and A can't finish
+# before A1, so C depending on A1 also deadlocks.
+$ ergon dep add nHcx pQyk
+$ ergon dep add pQyk qxpj
+error: refused: these tasks would wait on each other: demo/qxpj -> demo/FTFE -> demo/nHcx -> demo/pQyk -> demo/qxpj
+[exit 1]
+$ ergon dep add pQyk FTFE
+error: refused: these tasks would wait on each other: demo/FTFE -> demo/nHcx -> demo/pQyk -> demo/FTFE
+[exit 1]
+$ ergon dep add FTFE pQyk
+
+# Moving can't put a dependency under its dependent.
+$ ergon mv qxpj nHcx
+error: refused: demo/qxpj can't depend on demo/nHcx, its ancestor
+[exit 1]
+
+$ ergon dep rm qxpj nHcx
+$ ergon dep rm qxpj nHcx
+error: demo/qxpj doesn't depend on demo/nHcx
+[exit 1]
+$ ergon tree
+root  in_progress  p-  Root
+  qxpj  todo         p-  A
+    FTFE  todo         p-  A1  blocked
+  nHcx  todo         p-  B  blocked
+  pQyk  todo         p-  C

@@ -40,8 +40,9 @@ pub fn add(
         None => tasks.root(),
     };
     let status = status.or(parent.is_root().then_some(Status::Todo));
+    let mut rng = crate::rng(0);
     let slug = (0..1000)
-        .map(|_| slug::random())
+        .map(|_| slug::random(&mut rng))
         .find(|s| tasks.find(s).is_err())
         .context("couldn't find an unused slug")?;
     let now = crate::now();
@@ -214,13 +215,11 @@ pub fn rm(
     let actual = (descendants.len(), tasks.outside_dependents(task.id).len());
     if (subtasks, dependents) != actual {
         bail!(
-            "refused: deleting {} would delete {} subtasks and affect {} dependents; \
-             pass --subtasks {} --dependents {} to confirm",
-            tasks.reference(task.id),
+            "refused: the counts don't match; to delete {r}, run: \
+             ergon rm {r} --subtasks {} --dependents {}",
             actual.0,
             actual.1,
-            actual.0,
-            actual.1
+            r = tasks.reference(task.id),
         );
     }
     let now = crate::now();

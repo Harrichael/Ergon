@@ -312,7 +312,9 @@ impl Tasks {
             _ => {}
         }
 
-        let live: Vec<&Task> = self.tasks.values().filter(|t| !t.is_deleted()).collect();
+        // In creation order, so the violation reported is deterministic.
+        let mut live: Vec<&Task> = self.tasks.values().filter(|t| !t.is_deleted()).collect();
+        live.sort_by_key(|t| (t.created_at, t.id));
         let effective: HashMap<i64, Status> = live
             .iter()
             .map(|t| (t.id, self.effective_status(t.id)))

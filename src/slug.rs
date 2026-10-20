@@ -9,9 +9,10 @@ pub const LEN: usize = 4;
 /// isn't in the alphabet.
 pub const ROOT: &str = "root";
 
-pub fn random() -> String {
+pub fn random(rng: &mut impl rand::Rng) -> String {
+    use rand::RngExt;
     (0..LEN)
-        .map(|_| ALPHABET[rand::random_range(0..ALPHABET.len())] as char)
+        .map(|_| ALPHABET[rng.random_range(0..ALPHABET.len())] as char)
         .collect()
 }
 
@@ -34,8 +35,9 @@ mod tests {
 
     #[test]
     fn random_slugs_are_valid() {
+        let mut rng = crate::rng(0);
         for _ in 0..1000 {
-            let s = random();
+            let s = random(&mut rng);
             assert!(is_valid(&s) && s != ROOT, "{s}");
         }
     }

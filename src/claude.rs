@@ -96,7 +96,7 @@ pub fn work(conn: &mut Connection, project: &Project, slug: &str, cwd: &Path) ->
         });
     }
 
-    let session = uuid::Uuid::new_v4().to_string();
+    let session = crate::uuid(&mut crate::rng(task.id as u64));
     let dir = cwd
         .to_str()
         .with_context(|| format!("{} isn't valid UTF-8", cwd.display()))?;

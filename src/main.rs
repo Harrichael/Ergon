@@ -265,10 +265,12 @@ fn help(topic: Option<&str>) -> Result<()> {
     match topic {
         None => cmd.print_help()?,
         Some("planner") => print!("{}", claude::PLANNER_DOC),
-        Some(name) => match cmd.find_subcommand_mut(name) {
-            Some(sub) => sub.print_help()?,
-            None => bail!("no help topic {name:?}; try `ergon help`"),
-        },
+        Some(name) if cmd.find_subcommand(name).is_some() => {
+            if let Err(e) = Cli::try_parse_from(["ergon", name, "--help"]) {
+                e.print()?;
+            }
+        }
+        Some(name) => bail!("no help topic {name:?}; try `ergon help`"),
     }
     Ok(())
 }

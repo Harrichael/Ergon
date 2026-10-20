@@ -46,18 +46,17 @@ read as a bullet list of how the parent gets done.
 | `done`        | Finished.                                                  |
 | `cancelled`   | Won't be done.                                             |
 
-A task's status may be unset, in which case it follows its parent's. Top-level
-tasks (direct children of the root) always have a status, and start as `todo`
-automatically. Below them, leave status unset unless a task really differs
-from its parent.
-Don't set `in_progress` yourself: `ergon work` does that when the user starts
-a task.
+A task's status may be unset, in which case it follows its parent's.
+Top-level tasks (direct children of the root) always have a status, and start
+as `todo` automatically. Below them, leave status unset unless a task really
+differs from its parent. Don't set `in_progress` yourself: `ergon work` does
+that when the user starts a task.
 
 **Priority.** `p0` (most urgent) to `p4`, or unset. An unset priority is
 inferred: from the task's unfinished children if any of them have one,
-otherwise from its parent. A task that blocks another takes on that task's urgency if it's
-higher. Set priorities sparingly, usually on high-level tasks, and let the
-rest be inferred.
+otherwise from its parent. A task that blocks another takes on that task's
+urgency if it's higher. Set priorities sparingly, usually on high-level tasks,
+and let the rest be inferred.
 
 **Dependencies.** "A depends on B" means A shouldn't start until B is done or
 cancelled. Until then, A and all of A's subtasks are **blocked**. Dependencies
@@ -104,8 +103,8 @@ the error, then adjust or ask the user.
 against mistakes, it requires the number of subtasks being deleted and the
 number of tasks outside the subtree that depend on it. `ergon show` prints
 the exact `ergon rm` command with the current counts; if the counts are wrong,
-nothing is deleted. Dependencies on
-deleted tasks count as satisfied. `ergon restore` undoes a deletion.
+nothing is deleted. Dependencies on deleted tasks count as satisfied.
+`ergon restore` undoes a deletion.
 
 ## Commands
 

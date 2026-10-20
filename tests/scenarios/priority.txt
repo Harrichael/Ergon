@@ -1,0 +1,75 @@
+# Inferred priorities. Stored values are bold and inferred ones cyan on a
+# terminal; here, without colour, show says which is which.
+
+$ ergon init demo Root --no-launch
+Created project demo in $ROOT
+
+# Upward: the geometric mean of ranks over unfinished children.
+# sqrt(5 * 1) = 2.24 -> rank 2 -> p1.
+$ ergon add G
+qxpj
+$ ergon add P --parent qxpj
+FTFE
+$ ergon add H --parent qxpj
+nHcx
+$ ergon add X --parent nHcx --priority p4
+pQyk
+$ ergon add Y --parent nHcx --priority p0
+9cDQ
+$ ergon tree
+root  in_progress  p-  Root
+  qxpj  todo         p1  G
+    FTFE  todo         p1  P
+    nHcx  todo         p1  H
+      pQyk  todo         p4  X
+      9cDQ  todo         p0  Y
+
+# Boosting: P depends on X, so X takes P's p1. The boost doesn't feed back
+# into H's mean, which would otherwise spiral X up to p0.
+$ ergon dep add FTFE pQyk
+$ ergon tree
+root  in_progress  p-  Root
+  qxpj  todo         p1  G
+    FTFE  todo         p1  P  blocked
+    nHcx  todo         p1  H
+      pQyk  todo         p1  X
+      9cDQ  todo         p0  Y
+$ ergon show pQyk
+demo/pQyk  X
+status:    todo (inherited)
+priority:  p1 (boosted from stored p4)
+blocked:   no
+parent:    demo/nHcx  H
+created:   2025-10-09 08:53 (just now)
+updated:   2025-10-09 08:53 (just now)
+delete:    ergon rm demo/pQyk --subtasks 0 --dependents 1
+
+X
+
+Dependents:
+  - FTFE  todo         P
+
+# Closed children don't count towards the mean.
+$ ergon edit 9cDQ --status done
+$ ergon tree
+root  in_progress  p-  Root
+  qxpj  todo         p4  G
+    FTFE  todo         p4  P  blocked
+    nHcx  todo         p4  H
+      pQyk  todo         p4  X
+      9cDQ  done         p0  Y
+
+# Unprioritized top-level work has no priority: the root doesn't average.
+$ ergon add Lonely
+dFR6
+$ ergon show dFR6
+demo/dFR6  Lonely
+status:    todo
+priority:  p-
+blocked:   no
+parent:    demo/root  Root
+created:   2025-10-09 08:53 (just now)
+updated:   2025-10-09 08:53 (just now)
+delete:    ergon rm demo/dFR6 --subtasks 0 --dependents 0
+
+Lonely

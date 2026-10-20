@@ -1,0 +1,167 @@
+# Claude sessions. The fake claude prints its directory and arguments.
+
+# init launches the planner with a fresh session and the planner prompt.
+$ cd proj
+$ ergon init demo "Build a demo\n\nProject context."
+Created project demo in $ROOT/proj
+[claude in $ROOT/proj]
+--session-id
+400c6373-839f-41ec-9edf-c384f5d734e5
+# You are the planner for an ergon project
+...
+## This project
+
+Project: demo
+
+Root intent:
+
+Build a demo
+
+Project context.
+
+Ask the user how they'd like to start planning.
+$ ergon show root
+demo/root  Build a demo
+status:    in_progress
+priority:  p-
+blocked:   no
+created:   2025-10-09 08:53 (just now)
+updated:   2025-10-09 08:53 (just now)
+session:   400c6373-839f-41ec-9edf-c384f5d734e5 in $ROOT/proj
+
+Build a demo
+
+Project context.
+
+# Resuming happens in the recorded directory, wherever ergon runs.
+$ cd elsewhere
+$ ergon work demo/root
+[claude in $ROOT/proj]
+--resume
+400c6373-839f-41ec-9edf-c384f5d734e5
+
+# A first work session records the cwd and starts a todo task.
+$ cd proj
+$ ergon add Backend
+qxpj
+$ ergon add "Write the API\nUse REST." --parent qxpj
+FTFE
+$ ergon add Routes --parent FTFE
+nHcx
+$ ergon add Auth --parent FTFE --status done
+pQyk
+$ ergon add Dropped --parent FTFE --status cancelled
+9cDQ
+$ ergon add Nested --parent nHcx
+dFR6
+$ cd elsewhere
+$ ergon work demo/FTFE
+[claude in $ROOT/elsewhere]
+--session-id
+9487b132-9170-4b0c-ad01-fba48316f5e9
+Greater context that your work sits within:
+
+- Build a demo
+
+  Project context.
+
+- Backend
+
+Task to complete here (demo/FTFE):
+
+Write the API
+Use REST.
+
+- Routes
+  - Nested
+- [done] Auth
+
+Ask the user how they'd like to start.
+$ ergon show demo/FTFE
+demo/FTFE  Write the API
+status:    in_progress
+priority:  p-
+blocked:   no
+parent:    demo/qxpj  Backend
+created:   2025-10-09 08:53 (just now)
+updated:   2025-10-09 08:53 (just now)
+session:   9487b132-9170-4b0c-ad01-fba48316f5e9 in $ROOT/elsewhere
+delete:    ergon rm demo/FTFE --subtasks 4 --dependents 0
+
+Write the API
+Use REST.
+
+Subtasks:
+  - nHcx  in_progress  Routes
+  - pQyk  done         Auth
+  - 9cDQ  cancelled    Dropped
+$ ergon show demo/qxpj
+demo/qxpj  Backend
+status:    todo
+priority:  p-
+blocked:   no
+parent:    demo/root  Build a demo
+created:   2025-10-09 08:53 (just now)
+updated:   2025-10-09 08:53 (just now)
+delete:    ergon rm demo/qxpj --subtasks 5 --dependents 0
+
+Backend
+
+Subtasks:
+  - FTFE  in_progress  Write the API
+$ ergon work demo/FTFE
+[claude in $ROOT/elsewhere]
+--resume
+9487b132-9170-4b0c-ad01-fba48316f5e9
+
+# Closed tasks can't be worked; blocked ones warn.
+$ cd proj
+$ ergon work pQyk
+error: demo/pQyk is done
+[exit 1]
+$ ergon add Blocked
+qwpT
+$ ergon dep add qwpT qxpj
+$ ergon work qwpT
+[claude in $ROOT/proj]
+--session-id
+1c00f751-1ae5-476d-b826-a7e779d4c793
+Greater context that your work sits within:
+
+- Build a demo
+
+  Project context.
+
+Task to complete here (demo/qwpT):
+
+Blocked
+
+Ask the user how they'd like to start.
+
+warning: demo/qwpT is blocked, waiting on demo/qxpj
+
+# A vanished session directory is an error.
+$ rmdir elsewhere
+$ ergon work FTFE
+error: demo/FTFE's session directory $ROOT/elsewhere no longer exists
+[exit 1]
+
+# The planner launch can be skipped and started later.
+$ cd other
+$ ergon init second "Second project" --no-launch
+Created project second in $ROOT/other
+$ ergon work root
+[claude in $ROOT/other]
+--session-id
+4463a4d6-6f0a-4c52-bcb6-517469e528a3
+# You are the planner for an ergon project
+...
+## This project
+
+Project: second
+
+Root intent:
+
+Second project
+
+Ask the user how they'd like to start planning.

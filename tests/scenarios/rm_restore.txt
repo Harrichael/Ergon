@@ -1,0 +1,102 @@
+# Deleting and restoring.
+
+$ ergon init demo Root --no-launch
+Created project demo in $ROOT
+$ ergon add A
+qxpj
+$ ergon add A1 --parent qxpj
+FTFE
+$ ergon add X
+nHcx
+$ ergon dep add nHcx qxpj
+$ ergon show qxpj
+demo/qxpj  A
+status:    todo
+priority:  p-
+blocked:   no
+parent:    demo/root  Root
+created:   2025-10-09 08:53 (just now)
+updated:   2025-10-09 08:53 (just now)
+delete:    ergon rm demo/qxpj --subtasks 1 --dependents 1
+
+A
+
+Subtasks:
+  - FTFE  todo         A1
+
+Dependents:
+  - nHcx  todo         X
+
+# The counts must match what show prints.
+$ ergon rm qxpj --subtasks 0 --dependents 0
+error: refused: the counts don't match; to delete demo/qxpj, run: ergon rm demo/qxpj --subtasks 1 --dependents 1
+[exit 1]
+$ ergon rm qxpj --subtasks 1 --dependents 1
+$ ergon rm root --subtasks 3 --dependents 0
+error: the root task can't be deleted
+[exit 1]
+
+$ ergon show qxpj
+error: demo/qxpj is deleted
+[exit 1]
+$ ergon tree
+root  in_progress  p-  Root
+  nHcx  todo         p-  X
+$ ergon show nHcx
+demo/nHcx  X
+status:    todo
+priority:  p-
+blocked:   no
+parent:    demo/root  Root
+created:   2025-10-09 08:53 (just now)
+updated:   2025-10-09 08:53 (just now)
+delete:    ergon rm demo/nHcx --subtasks 0 --dependents 0
+
+X
+
+# Restoring brings back the subtree deleted with it.
+$ ergon restore qxpj
+Restored demo/qxpj
+Restored demo/FTFE
+$ ergon restore qxpj
+error: demo/qxpj isn't deleted
+[exit 1]
+$ ergon show nHcx
+demo/nHcx  X
+status:    todo
+priority:  p-
+blocked:   yes, waiting on demo/qxpj
+parent:    demo/root  Root
+created:   2025-10-09 08:53 (just now)
+updated:   2025-10-09 08:53 (just now)
+delete:    ergon rm demo/nHcx --subtasks 0 --dependents 0
+
+X
+
+Depends on:
+  - qxpj  todo         A
+
+# Restoring a subtask brings back its ancestors, but not subtasks deleted
+# separately before.
+$ ergon add A2 --parent qxpj --status todo
+pQyk
+$ ergon rm pQyk --subtasks 0 --dependents 0
+$ ERGON_NOW=1760000100 ergon rm qxpj --subtasks 1 --dependents 1
+$ ergon restore FTFE
+Restored demo/qxpj
+Restored demo/FTFE
+$ ergon tree
+root  in_progress  p-  Root
+  qxpj  todo         p-  A
+    FTFE  todo         p-  A1
+  nHcx  todo         p-  X  blocked
+
+# Restoring is subject to the rules: A2 is todo, so it can't come back under
+# a done parent.
+$ ergon edit qxpj --status done
+$ ergon restore pQyk
+error: refused: demo/qxpj is done, so its subtask demo/pQyk can't be todo
+[exit 1]
+$ ergon add A3 --parent qxpj --status todo
+error: refused: demo/qxpj is done, so its subtask demo/9cDQ can't be todo
+[exit 1]

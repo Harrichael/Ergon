@@ -1,0 +1,61 @@
+# Creating, listing, renaming and retiring projects.
+
+$ cd a
+$ ergon init alpha "Alpha intent" --no-launch
+Created project alpha in $ROOT/a
+$ cd b
+$ ergon init beta "Beta intent" --no-launch
+Created project beta in $ROOT/b
+
+# One .ergon per directory, and names are unique.
+$ ergon init again x --no-launch
+error: $ROOT/b/.ergon already exists
+[exit 1]
+$ cd c
+$ ergon init beta x --no-launch
+error: a project named "beta" already exists
+[exit 1]
+$ ergon init "has space" x --no-launch
+error: invalid project name "has space": use only letters, digits, '_' and '-'
+[exit 1]
+$ ergon init gamma "  " --no-launch
+error: the root intent can't be empty
+[exit 1]
+
+$ ergon project ls
+alpha  2025-10-09 08:53 (just now)
+beta  2025-10-09 08:53 (just now)
+
+$ ergon project rename alpha gamma
+$ ergon project rename gamma beta
+error: a project named "beta" already exists
+[exit 1]
+$ ergon project retire gamma
+$ ergon project retire gamma
+error: project "gamma" is already retired
+[exit 1]
+$ ergon project ls
+beta  2025-10-09 08:53 (just now)
+$ ergon project ls --all
+beta  2025-10-09 08:53 (just now)
+gamma  2025-10-09 08:53 (just now)  retired
+
+# Retired projects still work, and renames don't break .ergon.
+$ cd a
+$ ergon tree
+root  in_progress  p-  Alpha intent
+$ ergon project unretire gamma
+$ ergon project unretire gamma
+error: project "gamma" isn't retired
+[exit 1]
+
+# Outside any project.
+$ cd elsewhere
+$ ergon tree
+error: not in an ergon project (no .ergon file found); use --project or run `ergon init`
+[exit 1]
+$ ergon --project beta tree
+root  in_progress  p-  Beta intent
+$ ergon --project nope tree
+error: no project named "nope"
+[exit 1]

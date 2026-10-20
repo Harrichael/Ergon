@@ -1,0 +1,91 @@
+# Status inheritance and the rules ergon enforces.
+
+$ ergon init demo Root --no-launch
+Created project demo in $ROOT
+$ ergon add Parent
+qxpj
+$ ergon add Child --parent qxpj --status in_progress
+FTFE
+$ ergon add Grandchild --parent FTFE
+nHcx
+$ ergon add Sibling --parent qxpj
+pQyk
+$ ergon tree
+root  in_progress  p-  Root
+  qxpj  todo         p-  Parent
+    FTFE  in_progress  p-  Child
+      nHcx  in_progress  p-  Grandchild
+    pQyk  todo         p-  Sibling
+
+# Top-level tasks always have a status.
+$ ergon edit qxpj --status none
+error: refused: demo/qxpj is a top-level task, so it must have a status
+[exit 1]
+
+# Done needs closed descendants; unset statuses inherit.
+$ ergon edit qxpj --status done
+error: refused: demo/qxpj is done, so its subtask demo/FTFE can't be in_progress
+[exit 1]
+$ ergon edit FTFE --status done
+$ ergon edit qxpj --status done
+$ ergon tree
+root  in_progress  p-  Root
+  qxpj  done         p-  Parent
+    FTFE  done         p-  Child
+      nHcx  done         p-  Grandchild
+    pQyk  done         p-  Sibling
+$ ergon edit nHcx --status todo
+error: refused: demo/FTFE is done, so its subtask demo/nHcx can't be todo
+[exit 1]
+$ ergon add "Open child" --parent FTFE --status todo
+error: refused: demo/FTFE is done, so its subtask demo/9cDQ can't be todo
+[exit 1]
+$ ergon add "Inherits done" --parent FTFE
+9cDQ
+$ ergon edit qxpj --status in_progress
+
+# Done checks through cancelled children too.
+$ ergon add Other
+dFR6
+$ ergon add Cancelled --parent dFR6 --status cancelled
+qwpT
+$ ergon add "Still open" --parent qwpT --status todo
+AENA
+$ ergon edit dFR6 --status done
+error: refused: demo/dFR6 is done, so its subtask demo/AENA can't be todo
+[exit 1]
+
+# Landing needs landing or closed descendants.
+$ ergon add Shipping
+FubR
+$ ergon add Part --parent FubR --status in_progress
+LuM4
+$ ergon edit FubR --status landing
+error: refused: demo/FubR is landing, so its subtask demo/LuM4 can't be in_progress
+[exit 1]
+$ ergon edit LuM4 --status landing
+$ ergon edit FubR --status landing
+$ ergon edit LuM4 --status todo
+error: refused: demo/FubR is landing, so its subtask demo/LuM4 can't be todo
+[exit 1]
+
+# Cancelling cascades to unfinished descendants with a stored status.
+$ ergon edit dFR6 --status cancelled
+Also cancelled demo/AENA
+$ ergon tree dFR6
+dFR6  cancelled    p-  Other
+  qwpT  cancelled    p-  Cancelled
+    AENA  cancelled    p-  Still open
+
+# The root.
+$ ergon edit root --status none
+error: refused: the root task must have a status
+[exit 1]
+$ ergon edit root --status cancelled
+error: refused: the root task can't be cancelled
+[exit 1]
+$ ergon edit root --status nope
+error: invalid value 'nope' for '--status <STATUS>': invalid status "nope": expected todo, in_progress, landing, done or cancelled
+
+For more information, try '--help'.
+[exit 2]

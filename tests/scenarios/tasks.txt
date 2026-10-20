@@ -1,0 +1,116 @@
+# Adding, editing, showing and moving tasks.
+
+$ cd proj
+$ ergon init demo "Build a demo\n\nProject-wide context." --no-launch
+Created project demo in $ROOT/proj
+$ cd proj/deep/er
+$ ergon add "Backend\n\nDetails about the backend." --priority p1
+qxpj
+$ cd proj
+$ ergon add "Write the API\nUse REST." --parent qxpj
+FTFE
+$ ergon add Frontend
+nHcx
+$ ergon tree
+root  in_progress  p-  Build a demo
+  qxpj  todo         p1  Backend
+    FTFE  todo         p1  Write the API
+  nHcx  todo         p-  Frontend
+$ ergon show qxpj
+demo/qxpj  Backend
+status:    todo
+priority:  p1
+blocked:   no
+parent:    demo/root  Build a demo
+created:   2025-10-09 08:53 (just now)
+updated:   2025-10-09 08:53 (just now)
+delete:    ergon rm demo/qxpj --subtasks 1 --dependents 0
+
+Backend
+
+Details about the backend.
+
+Subtasks:
+  - FTFE  todo         Write the API
+
+# Titles are the first line, capped at 100 characters.
+$ ergon add "This title is far too long to fit, so ergon keeps only the first one hundred characters of it and drops the rest"
+pQyk
+$ ergon tree pQyk
+pQyk  todo         p-  This title is far too long to fit, so ergon keeps only the first one hundred characters of it and dr
+
+# References with an explicit project work from anywhere.
+$ cd elsewhere
+$ ergon edit demo/FTFE --intent "Write the API\nUse GraphQL."
+$ ergon --project demo edit qxpj --priority none
+# A bare slug needs a current project, though.
+$ ergon show qxpj
+error: not in an ergon project (no .ergon file found); use --project or run `ergon init`
+[exit 1]
+$ ergon show demo/FTFE
+demo/FTFE  Write the API
+status:    todo (inherited)
+priority:  p-
+blocked:   no
+parent:    demo/qxpj  Backend
+created:   2025-10-09 08:53 (just now)
+updated:   2025-10-09 08:53 (just now)
+delete:    ergon rm demo/FTFE --subtasks 0 --dependents 0
+
+Write the API
+Use GraphQL.
+
+# Moving.
+$ cd proj
+$ ergon mv FTFE pQyk
+$ ergon mv qxpj qxpj
+error: can't move demo/qxpj under itself or one of its subtasks
+[exit 1]
+$ ergon mv root qxpj
+error: the root task can't be moved
+[exit 1]
+$ ergon tree
+root  in_progress  p-  Build a demo
+  qxpj  todo         p-  Backend
+  nHcx  todo         p-  Frontend
+  pQyk  todo         p-  This title is far too long to fit, so ergon keeps only the first one hundred characters of it and dr
+    FTFE  todo         p-  Write the API
+
+# A task without a status that moves to the top level gets todo.
+$ ergon mv FTFE root
+$ ergon show FTFE
+demo/FTFE  Write the API
+status:    todo
+priority:  p-
+blocked:   no
+parent:    demo/root  Build a demo
+created:   2025-10-09 08:53 (just now)
+updated:   2025-10-09 08:53 (just now)
+delete:    ergon rm demo/FTFE --subtasks 0 --dependents 0
+
+Write the API
+Use GraphQL.
+
+# Bad input.
+$ ergon add "   "
+error: the intent can't be empty
+[exit 1]
+$ ergon add x --parent AAAA
+error: no task demo/AAAA
+[exit 1]
+$ ergon edit qxpj
+error: nothing to change: pass --intent, --status or --priority
+[exit 1]
+$ ergon edit qxpj --priority p5
+error: invalid value 'p5' for '--priority <PRIORITY>': invalid priority "p5": expected p0, p1, p2, p3 or p4
+
+For more information, try '--help'.
+[exit 2]
+$ ergon show E0dn
+error: invalid value 'E0dn' for '<TASK>': invalid task slug "E0dn"
+
+For more information, try '--help'.
+[exit 2]
+$ ergon mv qxpj demo/root --project other
+error: tasks must be in one project, but these name several: demo, other
+[exit 1]

@@ -1,0 +1,73 @@
+# ergon ls lists the coarsest open, unblocked work, most urgent first.
+
+$ ergon init demo Root --no-launch
+Created project demo in $ROOT
+$ ergon add Parent --priority p2
+qxpj
+$ ergon add First --parent qxpj
+FTFE
+$ ergon add Second --parent qxpj
+nHcx
+$ ergon add Prerequisite
+pQyk
+$ ergon ls
+qxpj  p2  todo         Parent
+pQyk  p-  todo         Prerequisite
+
+# Second blocked: Parent splits into its unblocked children. Prerequisite is
+# boosted to Second's p2; equal priorities list oldest first.
+$ ergon dep add nHcx pQyk
+$ ergon ls
+FTFE  p2  todo         First  (in: Parent)
+pQyk  p2  todo         Prerequisite
+$ ergon show nHcx
+demo/nHcx  Second
+status:    todo (inherited)
+priority:  p2 (inferred)
+blocked:   yes, waiting on demo/pQyk
+parent:    demo/qxpj  Parent
+created:   2025-10-09 08:53 (just now)
+updated:   2025-10-09 08:53 (just now)
+delete:    ergon rm demo/nHcx --subtasks 0 --dependents 0
+
+Second
+
+Depends on:
+  - pQyk  todo         Prerequisite
+$ ergon show pQyk
+demo/pQyk  Prerequisite
+status:    todo
+priority:  p2 (inferred)
+blocked:   no
+parent:    demo/root  Root
+created:   2025-10-09 08:53 (just now)
+updated:   2025-10-09 08:53 (just now)
+delete:    ergon rm demo/pQyk --subtasks 0 --dependents 1
+
+Prerequisite
+
+Dependents:
+  - nHcx  todo         Second
+$ ergon tree
+root  in_progress  p-  Root
+  qxpj  todo         p2  Parent
+    FTFE  todo         p2  First
+    nHcx  todo         p2  Second  blocked
+  pQyk  todo         p2  Prerequisite
+
+# Landing and done work isn't listed.
+$ ergon edit pQyk --status landing
+$ ergon ls
+FTFE  p2  todo         First  (in: Parent)
+$ ergon edit pQyk --status done
+$ ergon ls
+qxpj  p2  todo         Parent
+
+# A blocked parent hides its whole subtree.
+$ ergon add Later --priority p0
+9cDQ
+$ ergon add "Later step" --parent 9cDQ
+dFR6
+$ ergon dep add 9cDQ qxpj
+$ ergon ls
+qxpj  p0  todo         Parent

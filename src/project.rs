@@ -65,8 +65,11 @@ pub fn init(conn: &mut Connection, name: &str, root_intent: &str, dir: &Path) ->
     ensure_name_free(conn, name)?;
 
     let now = crate::now();
-    let uuid = uuid::Uuid::new_v4().to_string();
     let tx = conn.transaction()?;
+    let next_id: i64 = tx.query_row("SELECT COALESCE(MAX(id), 0) + 1 FROM projects", [], |r| {
+        r.get(0)
+    })?;
+    let uuid = crate::uuid(&mut crate::rng(next_id as u64));
     tx.execute(
         "INSERT INTO projects (uuid, name, created_at) VALUES (?1, ?2, ?3)",
         params![uuid, name, now],

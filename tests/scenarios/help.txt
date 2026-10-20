@@ -1,0 +1,44 @@
+$ ergon help planner
+# You are the planner for an ergon project
+...
+$ ergon help rm
+Delete a task and its subtree. The counts must match `show`
+
+Usage: ergon rm [OPTIONS] --subtasks <SUBTASKS> --dependents <DEPENDENTS> <TASK>
+
+Arguments:
+  <TASK>  
+
+Options:
+      --project <PROJECT>        Project to act on, instead of the one named by the nearest .ergon file
+      --subtasks <SUBTASKS>      Number of subtasks, at all depths, that will be deleted
+      --dependents <DEPENDENTS>  Number of tasks outside the subtree that depend on it
+  -h, --help                     Print help
+$ ergon help nope
+error: no help topic "nope"; try `ergon help`
+[exit 1]
+$ ergon
+Minimal task tracker for dispatching work to Claude Code sessions
+
+Usage: ergon [OPTIONS] <COMMAND>
+
+Commands:
+  init     Create a project and its root task, write .ergon here, and launch the planner session
+  project  Manage projects
+  add      Create a task and print its slug
+  edit     Change a task's intent, status or priority
+  rm       Delete a task and its subtree. The counts must match `show`
+  restore  Undo a deletion
+  mv       Move a task, with its subtree, under a new parent
+  show     Show one task in full
+  tree     Show the task tree (default: from the root)
+  ls       List the coarsest open, unblocked work, most urgent first
+  dep      Manage dependencies
+  work     Start or resume the Claude Code session for a task
+  help     Print help for ergon or a command; `ergon help planner` prints the planner's instructions
+
+Options:
+      --project <PROJECT>  Project to act on, instead of the one named by the nearest .ergon file
+  -h, --help               Print help
+  -V, --version            Print version
+[exit 2]
