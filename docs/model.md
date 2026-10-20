@@ -268,8 +268,8 @@ ergon restore <ref>
 ergon show <ref>
     Full intent; stored and effective status and priority; whether it's
     blocked; dependencies and dependents; session; timestamps; the
-    children's titles as a bullet list; and the subtask and dependent
-    counts that `rm` would require.
+    children's titles as a bullet list; and the exact `ergon rm` command,
+    with the subtask and dependent counts it requires.
 ergon tree [<ref>]
     Indented titles with slug, effective status, and effective priority.
 ergon ls

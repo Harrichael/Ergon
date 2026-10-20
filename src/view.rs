@@ -74,6 +74,15 @@ pub fn show(tasks: &Tasks, derived: &Derived, id: i64, now: i64) -> String {
     if let (Some(session), Some(cwd)) = (&t.claude_session, &t.claude_cwd) {
         let _ = writeln!(out, "session:   {session} in {cwd}");
     }
+    if !t.is_root() {
+        let _ = writeln!(
+            out,
+            "delete:    ergon rm {} --subtasks {} --dependents {}",
+            tasks.reference(id),
+            tasks.descendants(id).len(),
+            tasks.outside_dependents(id).len()
+        );
+    }
     let _ = writeln!(out, "\n{}", t.intent);
 
     let sections = [

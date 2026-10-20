@@ -195,6 +195,70 @@ pub fn dep_rm(
     Ok(())
 }
 
+/// Soft-deletes a task and its subtree. `subtasks` and `dependents` must
+/// match the real counts, as a guard against deleting more than intended.
+pub fn rm(
+    conn: &mut Connection,
+    project: &Project,
+    slug: &str,
+    subtasks: usize,
+    dependents: usize,
+) -> Result<()> {
+    let tx = conn.transaction()?;
+    let tasks = Tasks::load(&tx, project)?;
+    let task = tasks.live(slug)?;
+    if task.is_root() {
+        bail!("the root task can't be deleted");
+    }
+    let descendants = tasks.descendants(task.id);
+    let actual = (descendants.len(), tasks.outside_dependents(task.id).len());
+    if (subtasks, dependents) != actual {
+        bail!(
+            "refused: deleting {} would delete {} subtasks and affect {} dependents; \
+             pass --subtasks {} --dependents {} to confirm",
+            tasks.reference(task.id),
+            actual.0,
+            actual.1,
+            actual.0,
+            actual.1
+        );
+    }
+    let now = crate::now();
+    for id in std::iter::once(task.id).chain(descendants) {
+        tx.execute(
+            "UPDATE tasks SET deleted_at = ?1 WHERE id = ?2",
+            params![now, id],
+        )?;
+    }
+    commit_valid(tx, project)
+}
+
+/// Restores a deleted task, its deleted ancestors, and the descendants that
+/// were deleted along with it. Returns the references restored.
+pub fn restore(conn: &mut Connection, project: &Project, slug: &str) -> Result<Vec<String>> {
+    let tx = conn.transaction()?;
+    let tasks = Tasks::load(&tx, project)?;
+    let task = tasks.find(slug)?;
+    let Some(deleted_at) = task.deleted_at else {
+        bail!("{} isn't deleted", tasks.reference(task.id));
+    };
+    let ancestors = tasks.ancestors(task.id).into_iter().rev();
+    let same_rm = tasks
+        .all_descendants(task.id)
+        .into_iter()
+        .filter(|&d| tasks.get(d).deleted_at == Some(deleted_at));
+    let restored: Vec<i64> = ancestors
+        .filter(|&a| tasks.get(a).is_deleted())
+        .chain(std::iter::once(task.id))
+        .chain(same_rm)
+        .collect();
+    for &id in &restored {
+        tx.execute("UPDATE tasks SET deleted_at = NULL WHERE id = ?1", [id])?;
+    }
+    commit_valid(tx, project)?;
+    Ok(restored.into_iter().map(|id| tasks.reference(id)).collect())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -492,5 +556,103 @@ mod tests {
         // Depending across siblings without the reverse wait is fine.
         let c = f.add(Some(&p), None);
         dep(&mut f, &c, &b1).unwrap();
+    }
+
+    fn live(f: &Fixture, slug: &str) -> bool {
+        f.tasks().live(slug).is_ok()
+    }
+
+    #[test]
+    fn rm_requires_exact_counts() {
+        let mut f = Fixture::new();
+        let a = f.add(None, None);
+        let a1 = f.add(Some(&a), None);
+        f.add(Some(&a1), None);
+        let x = f.add(None, None);
+        let y = f.add(None, None);
+        dep(&mut f, &x, &a1).unwrap();
+        dep(&mut f, &y, &a).unwrap();
+
+        let err = rm(&mut f.conn, &f.project, &a, 0, 0)
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("--subtasks 2 --dependents 2"), "{err}");
+        assert!(live(&f, &a));
+        assert!(rm(&mut f.conn, &f.project, &a, 2, 1).is_err());
+        assert!(rm(&mut f.conn, &f.project, "root", 4, 0).is_err());
+
+        rm(&mut f.conn, &f.project, &a, 2, 2).unwrap();
+        assert!(!live(&f, &a) && !live(&f, &a1));
+        assert!(
+            f.tasks()
+                .live(&a)
+                .unwrap_err()
+                .to_string()
+                .contains("deleted")
+        );
+
+        // Dependencies on deleted tasks are satisfied.
+        let tasks = f.tasks();
+        assert!(tasks.dependencies(tasks.live(&x).unwrap().id).is_empty());
+    }
+
+    #[test]
+    fn deleted_slugs_are_not_reused() {
+        let mut f = Fixture::new();
+        let a = f.add(None, None);
+        rm(&mut f.conn, &f.project, &a, 0, 0).unwrap();
+        // The unique index covers deleted rows, so a collision can't be inserted.
+        let dup = f.conn.execute(
+            "INSERT INTO tasks (project_id, slug, parent_id, intent, created_at, updated_at)
+             VALUES (?1, ?2, ?3, 'x', 0, 0)",
+            params![f.project.id, a, f.tasks().root().id],
+        );
+        assert!(dup.is_err());
+    }
+
+    #[test]
+    fn restore_brings_back_ancestors_and_same_rm_descendants() {
+        let mut f = Fixture::new();
+        let a = f.add(None, None);
+        let b = f.add(Some(&a), None);
+        let c = f.add(Some(&b), None);
+        let earlier = f.add(Some(&b), None);
+
+        rm(&mut f.conn, &f.project, &earlier, 0, 0).unwrap();
+        f.conn
+            .execute(
+                "UPDATE tasks SET deleted_at = deleted_at - 100 WHERE slug = ?1",
+                [&earlier],
+            )
+            .unwrap();
+        rm(&mut f.conn, &f.project, &a, 2, 0).unwrap();
+
+        // Restoring c restores its ancestors, but not b's other subtrees.
+        let restored = restore(&mut f.conn, &f.project, &c).unwrap();
+        assert_eq!(
+            restored,
+            [format!("p/{a}"), format!("p/{b}"), format!("p/{c}")]
+        );
+        assert!(!live(&f, &earlier));
+
+        // Restoring b again isn't possible; restoring the earlier rm is.
+        assert!(restore(&mut f.conn, &f.project, &b).is_err());
+        restore(&mut f.conn, &f.project, &earlier).unwrap();
+        assert!(live(&f, &earlier));
+    }
+
+    #[test]
+    fn restore_is_subject_to_invariants() {
+        let mut f = Fixture::new();
+        let p = f.add(None, None);
+        let child = f.add(Some(&p), Some(Todo));
+        rm(&mut f.conn, &f.project, &child, 0, 0).unwrap();
+        f.set(&p, Some(Done)).unwrap();
+        let err = format!(
+            "{:#}",
+            restore(&mut f.conn, &f.project, &child).unwrap_err()
+        );
+        assert!(err.contains("is done"), "{err}");
+        assert!(!live(&f, &child));
     }
 }

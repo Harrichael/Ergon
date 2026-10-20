@@ -102,8 +102,9 @@ the error, then adjust or ask the user.
 
 **Deleting.** `ergon rm` deletes a task and its whole subtree. To guard
 against mistakes, it requires the number of subtasks being deleted and the
-number of tasks outside the subtree that depend on it. Get the real numbers
-with `ergon show` first; if they're wrong, nothing is deleted. Dependencies on
+number of tasks outside the subtree that depend on it. `ergon show` prints
+the exact `ergon rm` command with the current counts; if the counts are wrong,
+nothing is deleted. Dependencies on
 deleted tasks count as satisfied. `ergon restore` undoes a deletion.
 
 ## Commands
@@ -113,7 +114,8 @@ ergon tree [<slug>]
     The task tree, with slug, status and priority for each task.
 ergon show <slug>
     One task in full: intent, status, priority, blocked or not,
-    dependencies and dependents, subtask titles, and subtask counts.
+    dependencies and dependents, subtask titles, and the command to
+    delete it.
 ergon ls
     Work that's ready to start.
 

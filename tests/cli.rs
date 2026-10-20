@@ -212,3 +212,34 @@ fn ls_command() {
     let show = env.ok(&dir, &["show", &x]);
     assert!(show.contains("priority:  p2 (inferred)"), "{show}");
 }
+
+#[test]
+fn rm_and_restore() {
+    let env = Env::new();
+    let dir = env.dir("proj");
+    env.ok(&dir, &["init", "demo", "Root"]);
+    let a = env.ok(&dir, &["add", "A"]).trim().to_string();
+    env.ok(&dir, &["add", "A1", "--parent", &a]);
+    let x = env.ok(&dir, &["add", "X"]).trim().to_string();
+    env.ok(&dir, &["dep", "add", &x, &a]);
+
+    let show = env.ok(&dir, &["show", &a]);
+    let line = show.lines().find(|l| l.starts_with("delete:")).unwrap();
+    assert_eq!(
+        line,
+        format!("delete:    ergon rm demo/{a} --subtasks 1 --dependents 1")
+    );
+
+    let err = env.err(&dir, &["rm", &a, "--subtasks", "0", "--dependents", "0"]);
+    assert!(err.contains("--subtasks 1 --dependents 1"), "{err}");
+    let args: Vec<&str> = line.split_whitespace().skip(2).collect();
+    env.ok(&dir, &args);
+
+    assert!(env.err(&dir, &["show", &a]).contains("is deleted"));
+    assert!(!env.ok(&dir, &["tree"]).contains(" A"));
+    assert!(env.ok(&dir, &["show", &x]).contains("blocked:   no"));
+
+    let out = env.ok(&dir, &["restore", &a]);
+    assert_eq!(out.lines().count(), 2, "{out}");
+    assert!(env.ok(&dir, &["show", &x]).contains("blocked:   yes"));
+}

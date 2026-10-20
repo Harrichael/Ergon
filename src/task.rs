@@ -232,6 +232,31 @@ impl Tasks {
             .filter(|t| !t.is_deleted())
     }
 
+    /// Descendants, deleted or not, depth first.
+    pub fn all_descendants(&self, id: i64) -> Vec<i64> {
+        let mut out = Vec::new();
+        let mut stack = vec![id];
+        while let Some(t) = stack.pop() {
+            for &c in self.children.get(&t).into_iter().flatten().rev() {
+                out.push(c);
+                stack.push(c);
+            }
+        }
+        out
+    }
+
+    /// Live tasks outside the subtree at `id` that depend on a task inside it.
+    pub fn outside_dependents(&self, id: i64) -> Vec<i64> {
+        let subtree: std::collections::HashSet<i64> =
+            std::iter::once(id).chain(self.descendants(id)).collect();
+        let deps: BTreeSet<i64> = self
+            .live_deps()
+            .filter(|(t, d)| subtree.contains(d) && !subtree.contains(t))
+            .map(|(t, _)| t)
+            .collect();
+        deps.into_iter().collect()
+    }
+
     /// Live descendants, depth first.
     pub fn descendants(&self, id: i64) -> Vec<i64> {
         let mut out = Vec::new();
@@ -278,6 +303,9 @@ impl Tasks {
     /// Checks every rule a change could break, naming the first violation.
     pub fn validate(&self) -> Result<()> {
         let root = self.root();
+        if root.is_deleted() {
+            bail!("the root task can't be deleted");
+        }
         match root.status {
             None => bail!("the root task must have a status"),
             Some(Status::Cancelled) => bail!("the root task can't be cancelled"),
@@ -291,6 +319,13 @@ impl Tasks {
             .collect();
 
         for t in &live {
+            if let Some(p) = t.parent_id.filter(|p| self.get(*p).is_deleted()) {
+                bail!(
+                    "{} can't be live while its parent {} is deleted",
+                    self.reference(t.id),
+                    self.reference(p)
+                );
+            }
             if t.parent_id == Some(self.root) && t.status.is_none() {
                 bail!(
                     "{} is a top-level task, so it must have a status",

@@ -54,6 +54,18 @@ enum Command {
         #[arg(long, value_parser = parse_priority_or_none)]
         priority: Option<OrNone<u8>>,
     },
+    /// Delete a task and its subtree. The counts must match `show`.
+    Rm {
+        task: TaskRef,
+        /// Number of subtasks, at all depths, that will be deleted.
+        #[arg(long)]
+        subtasks: usize,
+        /// Number of tasks outside the subtree that depend on it.
+        #[arg(long)]
+        dependents: usize,
+    },
+    /// Undo a deletion.
+    Restore { task: TaskRef },
     /// Move a task, with its subtree, under a new parent.
     Mv { task: TaskRef, new_parent: TaskRef },
     /// Show one task in full.
@@ -172,6 +184,20 @@ fn run(cli: Cli) -> Result<()> {
         Command::Mv { task, new_parent } => {
             let p = project_for(&conn, &[&task, &new_parent])?;
             ops::mv(&mut conn, &p, &task.slug, &new_parent.slug)?;
+        }
+        Command::Rm {
+            task,
+            subtasks,
+            dependents,
+        } => {
+            let p = project_for(&conn, &[&task])?;
+            ops::rm(&mut conn, &p, &task.slug, subtasks, dependents)?;
+        }
+        Command::Restore { task } => {
+            let p = project_for(&conn, &[&task])?;
+            for r in ops::restore(&mut conn, &p, &task.slug)? {
+                println!("Restored {r}");
+            }
         }
         Command::Show { task } => {
             let p = project_for(&conn, &[&task])?;
