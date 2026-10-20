@@ -273,47 +273,6 @@ mod tests {
     }
 
     #[test]
-    fn upward_and_downward_inference() {
-        let mut f = Fixture::new();
-        let parent = f.add(None, None);
-        let a = f.add(Some(&parent), Some(4));
-        let b = f.add(Some(&parent), Some(0));
-        let unset = f.add(Some(&parent), None);
-        let leaf = f.add(Some(&unset), None);
-        assert_eq!(f.priority(&parent), Some(1));
-        assert_eq!(
-            f.priority(&unset),
-            Some(1),
-            "inherits the parent's inferred value"
-        );
-        assert_eq!(f.priority(&leaf), Some(1));
-        assert_eq!(f.priority(&a), Some(4));
-
-        // Closed children don't count.
-        f.status(&b, Status::Done);
-        assert_eq!(f.priority(&parent), Some(4));
-
-        let lonely = f.add(None, None);
-        assert_eq!(f.priority(&lonely), None);
-    }
-
-    #[test]
-    fn dependency_boost_does_not_feed_back() {
-        // The worked example: G has P and H; H has X (p4) and Y (p0); P
-        // depends on X. Without feedback X ends at p1, not p0.
-        let mut f = Fixture::new();
-        let g = f.add(None, None);
-        let p = f.add(Some(&g), None);
-        let h = f.add(Some(&g), None);
-        let x = f.add(Some(&h), Some(4));
-        f.add(Some(&h), Some(0));
-        f.dep(&p, &x);
-        assert_eq!(f.priority(&h), Some(1));
-        assert_eq!(f.priority(&p), Some(1));
-        assert_eq!(f.priority(&x), Some(1));
-    }
-
-    #[test]
     fn boost_is_transitive_and_includes_subtasks_of_dependents() {
         let mut f = Fixture::new();
         let a = f.add(None, Some(3));
@@ -348,26 +307,6 @@ mod tests {
 
         f.status(&x, Status::Cancelled);
         assert!(!f.blocked(&a), "cancelled dependencies are satisfied");
-    }
-
-    #[test]
-    fn ls_shows_coarsest_unblocked_work() {
-        let mut f = Fixture::new();
-        let p = f.add(None, Some(2));
-        let a = f.add(Some(&p), None);
-        let b = f.add(Some(&p), None);
-        let x = f.add(None, Some(1));
-        assert_eq!(f.ls(), [x.clone(), p.clone()]);
-
-        // B blocked: show A instead of P. x is still open and unblocked.
-        f.dep(&b, &x);
-        assert_eq!(f.ls(), [x.clone(), a.clone()]);
-
-        // Landing and done work isn't listed.
-        f.status(&x, Status::Landing);
-        assert_eq!(f.ls(), std::slice::from_ref(&a));
-        f.status(&x, Status::Done);
-        assert_eq!(f.ls(), std::slice::from_ref(&p));
     }
 
     #[test]

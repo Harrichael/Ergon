@@ -89,3 +89,42 @@ error: invalid value 'nope' for '--status <STATUS>': invalid status "nope": expe
 
 For more information, try '--help'.
 [exit 2]
+
+# Under a done task, unsetting a child's status (so it inherits done) and
+# adding a cancelled child are both fine.
+$ ergon add Finished --status done
+bfLH
+$ ergon add "Was done" --parent bfLH --status done
+Hwgf
+$ ergon edit Hwgf --status none
+$ ergon add "Dropped idea" --parent bfLH --status cancelled
+xg4A
+$ ergon tree bfLH
+bfLH  done         p-  Finished
+  Hwgf  done         p-  Was done
+  xg4A  cancelled    p-  Dropped idea
+
+# Cancelling cascades onto landing work at any depth, leaves done work done,
+# and unset tasks follow along.
+$ ergon add Big
+QHcE
+$ ergon add Stage --parent QHcE --status in_progress
+DgTN
+$ ergon add Shipped --parent DgTN --status landing
+va4G
+$ ergon add Complete --parent QHcE --status done
+4xpH
+$ ergon add Unset --parent QHcE
+L6Rh
+$ ergon edit QHcE --status cancelled
+Also cancelled demo/DgTN
+Also cancelled demo/va4G
+$ ergon tree QHcE
+QHcE  cancelled    p-  Big
+  DgTN  cancelled    p-  Stage
+    va4G  cancelled    p-  Shipped
+  4xpH  done         p-  Complete
+  L6Rh  cancelled    p-  Unset
+
+# A landing parent's child can move on to done.
+$ ergon edit LuM4 --status done

@@ -273,15 +273,26 @@ fn scenarios() {
         .unwrap()
         .map(|e| e.unwrap().path())
         .filter(|p| p.extension().is_some_and(|e| e == "txt"))
-        .filter(|p| filter.as_ref().is_none_or(|f| p.to_string_lossy().contains(f)))
+        .filter(|p| {
+            filter
+                .as_ref()
+                .is_none_or(|f| p.to_string_lossy().contains(f))
+        })
         .collect();
     paths.sort();
     assert!(!paths.is_empty(), "no scenarios found in {}", dir.display());
 
-    let failures: Vec<String> = paths.iter().filter_map(|p| run_scenario(p, bless)).collect();
+    let failures: Vec<String> = paths
+        .iter()
+        .filter_map(|p| run_scenario(p, bless))
+        .collect();
     if !failures.is_empty() {
         let verb = if bless { "blessed" } else { "failed" };
-        panic!("{} scenario(s) {verb}:\n\n{}", failures.len(), failures.join("\n"));
+        panic!(
+            "{} scenario(s) {verb}:\n\n{}",
+            failures.len(),
+            failures.join("\n")
+        );
     }
 }
 

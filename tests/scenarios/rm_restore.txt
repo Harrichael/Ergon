@@ -100,3 +100,10 @@ error: refused: demo/qxpj is done, so its subtask demo/pQyk can't be todo
 $ ergon add A3 --parent qxpj --status todo
 error: refused: demo/qxpj is done, so its subtask demo/9cDQ can't be todo
 [exit 1]
+
+# The refused restore left everything as it was.
+$ ergon tree
+root  in_progress  p-  Root
+  qxpj  done         p-  A
+    FTFE  done         p-  A1
+  nHcx  todo         p-  X

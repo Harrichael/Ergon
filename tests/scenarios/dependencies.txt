@@ -86,3 +86,32 @@ root  in_progress  p-  Root
     FTFE  todo         p-  A1  blocked
   nHcx  todo         p-  B  blocked
   pQyk  todo         p-  C
+
+# The root can't be a dependent either, and moving a dependency under its
+# dependent is refused too.
+$ ergon dep add root qxpj
+error: refused: the root task can't have dependencies or dependents
+[exit 1]
+$ ergon mv pQyk FTFE
+error: refused: demo/FTFE can't depend on demo/pQyk, its subtask
+[exit 1]
+
+# A task can't finish before its subtasks. Here B waits on A, so A1 can't
+# wait on B1: A1 -> B1 -> (B's wait) A -> (A's subtask) A1.
+$ ergon add P
+9cDQ
+$ ergon add A --parent 9cDQ
+dFR6
+$ ergon add A1 --parent dFR6
+qwpT
+$ ergon add B --parent 9cDQ
+AENA
+$ ergon add B1 --parent AENA
+FubR
+$ ergon dep add AENA dFR6
+$ ergon dep add qwpT FubR
+error: refused: these tasks would wait on each other: demo/dFR6 -> demo/qwpT -> demo/FubR -> demo/dFR6
+[exit 1]
+$ ergon add C --parent 9cDQ
+LuM4
+$ ergon dep add LuM4 FubR

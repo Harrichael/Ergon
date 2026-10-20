@@ -114,3 +114,14 @@ For more information, try '--help'.
 $ ergon mv qxpj demo/root --project other
 error: tasks must be in one project, but these name several: demo, other
 [exit 1]
+
+# Moving under a descendant, or open work under a done task, is refused.
+$ ergon add "Backend detail" --parent qxpj
+9cDQ
+$ ergon mv qxpj 9cDQ
+error: can't move demo/qxpj under itself or one of its subtasks
+[exit 1]
+$ ergon edit nHcx --status done
+$ ergon mv pQyk nHcx
+error: refused: demo/nHcx is done, so its subtask demo/pQyk can't be todo
+[exit 1]
