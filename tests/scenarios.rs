@@ -14,7 +14,8 @@
 //! - `$ ergon ...` runs ergon. Arguments are split like a shell: single and
 //!   double quotes group, and `\n` inside double quotes is a newline. Leading
 //!   `NAME=value` words set environment variables for that command only.
-//! - A command ending in `<<EOF` reads the lines up to `EOF` as its stdin.
+//! - A command ending in `<<EOF` reads the lines up to `EOF` as its stdin,
+//!   and one ending in `> <file>` writes its stdout to that file instead.
 //! - `$ cd <dir>` changes directory (created if missing) and `$ rmdir <dir>`
 //!   removes one; both are relative to the scenario's root.
 //! - The expected output is every line up to the next `$ ` line, minus
@@ -192,6 +193,14 @@ impl Sandbox {
             env.push((k.to_string(), v.to_string()));
             words.remove(0);
         }
+        let redirect = match words.iter().position(|w| w == ">") {
+            Some(i) => {
+                let file = self.cwd.join(&words[i + 1]);
+                words.truncate(i);
+                Some(file)
+            }
+            None => None,
+        };
         let (program, args) = words.split_first().expect("empty command");
         match program.as_str() {
             "cd" => {
@@ -203,7 +212,7 @@ impl Sandbox {
                 std::fs::remove_dir_all(self.root.join(&args[0])).unwrap();
                 Vec::new()
             }
-            "ergon" => self.ergon(args, &env, stdin),
+            "ergon" => self.ergon(args, &env, stdin, redirect),
             other => panic!("unknown scenario command {other:?}"),
         }
     }
@@ -213,6 +222,7 @@ impl Sandbox {
         args: &[String],
         env: &[(String, String)],
         stdin: Option<&[String]>,
+        redirect: Option<PathBuf>,
     ) -> Vec<String> {
         use std::io::Write;
         use std::process::Stdio;
@@ -244,6 +254,9 @@ impl Sandbox {
             .unwrap();
         let out = child.wait_with_output().unwrap();
         let mut text = String::from_utf8_lossy(&out.stdout).into_owned();
+        if let Some(file) = redirect {
+            std::fs::write(file, std::mem::take(&mut text)).unwrap();
+        }
         text.push_str(&String::from_utf8_lossy(&out.stderr));
         if !out.status.success() {
             text.push_str(&format!("[exit {}]\n", out.status.code().unwrap_or(-1)));

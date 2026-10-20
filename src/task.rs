@@ -7,7 +7,8 @@ use rusqlite::{Connection, Row};
 
 use crate::project::Project;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum Status {
     Todo,
     InProgress,
@@ -203,6 +204,13 @@ impl Tasks {
 
     pub fn root(&self) -> &Task {
         self.get(self.root)
+    }
+
+    /// Every task, deleted ones included, oldest first.
+    pub fn all(&self) -> Vec<&Task> {
+        let mut out: Vec<&Task> = self.tasks.values().collect();
+        out.sort_by_key(|t| (t.created_at, t.id));
+        out
     }
 
     /// A task by slug, deleted or not.

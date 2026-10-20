@@ -1,6 +1,7 @@
 pub mod claude;
 pub mod db;
 pub mod derived;
+pub mod export;
 pub mod fmt;
 pub mod ops;
 pub mod outline;

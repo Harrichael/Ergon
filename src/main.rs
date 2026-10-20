@@ -1,4 +1,4 @@
-use anyhow::{Result, bail};
+use anyhow::{Context, Result, bail};
 use clap::{CommandFactory, Parser, Subcommand};
 use rusqlite::Connection;
 
@@ -9,7 +9,7 @@ use ergon::refs::{self, TaskRef};
 use ergon::task::{self, Status, Tasks};
 
 use ergon::derived::Derived;
-use ergon::{claude, db, fmt, outline, view};
+use ergon::{claude, db, export, fmt, outline, view};
 use std::io::Read;
 
 /// Minimal task tracker for dispatching work to Claude Code sessions.
@@ -119,6 +119,17 @@ enum Command {
     /// Manage dependencies.
     #[command(subcommand)]
     Dep(DepCommand),
+    /// Print projects in full as JSON, for backups or another database
+    ///
+    /// Every project by default, retired ones included; one with --project.
+    /// The format doesn't depend on the database schema, and later versions
+    /// of ergon can still import it.
+    Export,
+    /// Add the projects in an export (a file, or stdin) to this database
+    ///
+    /// They keep their UUIDs, so their .ergon files still find them. All or
+    /// nothing: a project that's already in the database is refused.
+    Import { file: Option<std::path::PathBuf> },
     /// Start or resume the Claude Code session for a task.
     Work { task: TaskRef },
     /// Print help for ergon or a command; `ergon help planner` prints the
@@ -297,6 +308,28 @@ fn run(cli: Cli) -> Result<()> {
                 print!("{}", outline::json(&tasks, &Derived::compute(&tasks)));
             } else {
                 print!("{}", outline::render(&tasks).text);
+            }
+        }
+        Command::Export => {
+            let projects = match flag {
+                Some(name) => vec![project::by_name(&conn, name)?],
+                None => project::list(&conn, true)?,
+            };
+            print!("{}", export::export(&conn, &projects)?);
+        }
+        Command::Import { file } => {
+            let json = match &file {
+                Some(path) => std::fs::read_to_string(path)
+                    .with_context(|| format!("reading {}", path.display()))?,
+                None => {
+                    let mut s = String::new();
+                    std::io::stdin().read_to_string(&mut s)?;
+                    s
+                }
+            };
+            for (name, tasks) in export::import(&mut conn, &json)? {
+                let s = if tasks == 1 { "" } else { "s" };
+                println!("Imported {name} ({tasks} task{s})");
             }
         }
         Command::Work { task } => {

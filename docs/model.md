@@ -88,6 +88,20 @@ The database is at `$ERGON_DB`, or `$XDG_DATA_HOME/ergon/ergon.db` (normally
 concurrent `ergon` calls are safe. The schema version is tracked with
 `PRAGMA user_version`.
 
+**Upgrades.** Any `ergon` command upgrades an older database when it opens
+it. It takes the write lock, so of several processes only one upgrades, then
+copies the database to `<db>.v<N>.bak` (the newest three are kept) and runs
+every pending step in one transaction. An ergon older than the database
+refuses to touch it. Released steps never change: a test pins their hashes,
+and another upgrades data saved from each released schema
+(`tests/fixtures/`).
+
+**Export.** `ergon export` writes projects as JSON in a format of its own,
+versioned apart from the schema, and `ergon import` reads it into any
+database. Projects keep their UUIDs, so `.ergon` files keep working. Use it
+for backups, to move between machines, or to recover if an upgrade ever
+goes wrong.
+
 ## Status
 
 | Status        | Meaning                                                              |
@@ -271,17 +285,24 @@ ergon mv <ref> <new-parent-ref>
 ergon rm <ref> --subtasks <N> --dependents <M>
 ergon restore <ref>
 
-ergon show <ref>
-    Full intent; stored and effective status and priority; whether it's
+ergon show <ref> [--intent]
+    With --intent, just the intent. Otherwise: full intent; stored and effective status and priority; whether it's
     blocked; dependencies and dependents; session; timestamps; the
     children's titles as a bullet list; and the exact `ergon rm` command,
     with the subtask and dependent counts it requires.
 ergon tree [<ref>]
     Indented titles with slug, effective status, and effective priority.
 ergon ls
+ergon outline [--json]
+ergon outline --apply [--dry-run]
+    The project as editable text, one line per task, and applying an
+    edited copy back in one transaction. See `ergon outline --help`.
 
 ergon dep add <ref> <depends-on-ref>
 ergon dep rm <ref> <depends-on-ref>
+
+ergon export
+ergon import [<file>]
 
 ergon work <ref>
 ergon help planner

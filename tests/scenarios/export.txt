@@ -1,0 +1,180 @@
+# Export and import: whole projects as JSON, independent of the schema.
+
+$ cd a
+$ ergon init alpha "Alpha\n\nContext." --no-launch
+Created project alpha in $ROOT/a
+$ ergon add Backend --priority p1
+qxpj
+$ ergon add API --parent qxpj
+FTFE
+$ ergon add Frontend
+nHcx
+$ ergon dep add nHcx FTFE
+$ ergon work FTFE
+[claude in $ROOT/a]
+--session-id
+9487b132-9170-4b0c-ad01-fba48316f5e9
+Greater context that your work sits within:
+
+- Alpha
+
+  Context.
+
+- Backend
+
+Task to complete here (alpha/FTFE):
+
+API
+
+Ask the user how they'd like to start.
+$ ergon add "Old idea" --parent nHcx
+pQyk
+$ ergon rm pQyk --subtasks 0 --dependents 0
+$ cd b
+$ ergon init beta Beta --no-launch
+Created project beta in $ROOT/b
+$ ergon project retire beta
+$ cd a
+$ ergon tree
+root  in_progress  p-  Alpha
+  qxpj  todo         p1  Backend
+    FTFE  in_progress  p1  API
+  nHcx  todo         p-  Frontend  blocked
+
+# Everything: retired projects, deleted tasks, sessions, order.
+$ ergon export
+{
+  "format": 1,
+  "projects": [
+    {
+      "uuid": "400c6373-839f-41ec-9edf-c384f5d734e5",
+      "name": "alpha",
+      "created_at": 1760000000,
+      "retired_at": null,
+      "tasks": [
+        {
+          "slug": "root",
+          "parent": null,
+          "intent": "Alpha\n\nContext.",
+          "status": "in_progress",
+          "priority": null,
+          "claude_session": null,
+          "claude_cwd": null,
+          "created_at": 1760000000,
+          "updated_at": 1760000000,
+          "deleted_at": null,
+          "position": 0
+        },
+        {
+          "slug": "qxpj",
+          "parent": "root",
+          "intent": "Backend",
+          "status": "todo",
+          "priority": 1,
+          "claude_session": null,
+          "claude_cwd": null,
+          "created_at": 1760000000,
+          "updated_at": 1760000000,
+          "deleted_at": null,
+          "position": 0
+        },
+        {
+          "slug": "FTFE",
+          "parent": "qxpj",
+          "intent": "API",
+          "status": "in_progress",
+          "priority": null,
+          "claude_session": "9487b132-9170-4b0c-ad01-fba48316f5e9",
+          "claude_cwd": "$ROOT/a",
+          "created_at": 1760000000,
+          "updated_at": 1760000000,
+          "deleted_at": null,
+          "position": 0
+        },
+        {
+          "slug": "nHcx",
+          "parent": "root",
+          "intent": "Frontend",
+          "status": "todo",
+          "priority": null,
+          "claude_session": null,
+          "claude_cwd": null,
+          "created_at": 1760000000,
+          "updated_at": 1760000000,
+          "deleted_at": null,
+          "position": 1
+        },
+        {
+          "slug": "pQyk",
+          "parent": "nHcx",
+          "intent": "Old idea",
+          "status": null,
+          "priority": null,
+          "claude_session": null,
+          "claude_cwd": null,
+          "created_at": 1760000000,
+          "updated_at": 1760000000,
+          "deleted_at": 1760000000,
+          "position": 0
+        }
+      ],
+      "deps": [
+        {
+          "task": "nHcx",
+          "depends_on": "FTFE"
+        }
+      ]
+    },
+    {
+      "uuid": "da34548b-56e9-41c2-98a8-7a0c1a8f4993",
+      "name": "beta",
+      "created_at": 1760000000,
+      "retired_at": 1760000000,
+      "tasks": [
+        {
+          "slug": "root",
+          "parent": null,
+          "intent": "Beta",
+          "status": "in_progress",
+          "priority": null,
+          "claude_session": null,
+          "claude_cwd": null,
+          "created_at": 1760000000,
+          "updated_at": 1760000000,
+          "deleted_at": null,
+          "position": 0
+        }
+      ],
+      "deps": []
+    }
+  ]
+}
+
+# Into another database, where the .ergon files still find their projects.
+$ ergon export > backup.json
+$ ERGON_DB=restored.db ergon import backup.json
+Imported alpha (5 tasks)
+Imported beta (1 task)
+$ ERGON_DB=restored.db ergon tree
+root  in_progress  p-  Alpha
+  qxpj  todo         p1  Backend
+    FTFE  in_progress  p1  API
+  nHcx  todo         p-  Frontend  blocked
+$ ERGON_DB=restored.db ergon project ls --all
+alpha  2025-10-09 08:53 (just now)
+beta  2025-10-09 08:53 (just now)  retired
+$ ERGON_DB=restored.db ergon restore pQyk
+Restored alpha/pQyk
+
+# A project that's already there is refused, and nothing is imported.
+$ ergon import backup.json
+error: importing project alpha: a project named alpha already exists
+[exit 1]
+$ ergon project ls --all
+alpha  2025-10-09 08:53 (just now)
+beta  2025-10-09 08:53 (just now)  retired
+
+# Just one project.
+$ ergon --project beta export > beta.json
+$ ERGON_DB=beta-only.db ergon import beta.json
+Imported beta (1 task)
