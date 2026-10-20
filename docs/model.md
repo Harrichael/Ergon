@@ -115,7 +115,10 @@ only the results of the previous one, so the outcome doesn't depend on
 evaluation order. Deleted tasks are ignored throughout.
 
 1. **Upward.** If the task has a stored priority, use it. Otherwise, if any
-   children have an upward priority, use their geometric mean. The mean is
+   children that aren't closed have an upward priority, use their geometric
+   mean. (The root never infers one this way: it stands for the whole
+   project, and averaging it would push a project-wide mean onto every
+   unprioritized top-level task.) The mean is
    taken over ranks, where `pN` has rank `N+1`, and the result is rounded to the
    nearest rank, with exact halves rounding towards more urgent. Otherwise the
    task has no upward priority.
@@ -123,12 +126,14 @@ evaluation order. Deleted tasks are ignored throughout.
    otherwise its parent's base priority. If nothing up to the root has one, the
    task has no priority.
 3. **Dependency boost.** The effective priority is the most urgent of the
-   task's own base priority and the base priorities of every task that depends
-   on it, directly or transitively, and isn't closed. A `p3` task that blocks a
-   `p1` task is effectively `p1`. The boost doesn't feed back into passes 1 and 2.
+   task's own base priority and the base priorities of every task that isn't
+   closed and waits on it: tasks that depend on it, their subtasks (which
+   inherit the block), and so on transitively. A `p3` task that blocks a `p1`
+   task is effectively `p1`. The boost doesn't feed back into passes 1 and 2.
 
-Effective priority is shown in a different colour from stored priority. Tasks
-with no priority display as `p-` and sort after `p4`.
+Effective priority is shown bold when it equals the stored priority, and cyan
+when it's inferred or boosted. Tasks with no priority display as a dimmed `p-`
+and sort after `p4`.
 
 ## Blocked
 
@@ -149,8 +154,8 @@ For example: P has children A and B. If both are unblocked, `ls` shows P. If B
 is blocked, `ls` shows A.
 
 Results are sorted by effective priority, then oldest first. Each row shows:
-slug, effective priority, effective status, title, and a dimmed `(in: <parent
-title>)`.
+slug, effective priority, effective status, title, and, below the top level, a
+dimmed `(in: <parent title>)`.
 
 ## Invariants
 

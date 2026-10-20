@@ -104,7 +104,7 @@ fn task_commands() {
         "{tree}"
     );
     assert!(
-        tree.contains(&format!("    {b}  todo         p-  API")),
+        tree.contains(&format!("    {b}  todo         p1  API")),
         "{tree}"
     );
 
@@ -166,5 +166,49 @@ fn dependency_commands() {
     let err = env.err(&dir, &["dep", "add", &b, &a]);
     assert!(err.contains("wait on each other"), "{err}");
     env.ok(&dir, &["dep", "rm", &a, &b]);
-    assert!(env.err(&dir, &["dep", "rm", &a, &b]).contains("doesn't depend"));
+    assert!(
+        env.err(&dir, &["dep", "rm", &a, &b])
+            .contains("doesn't depend")
+    );
+}
+
+#[test]
+fn ls_command() {
+    let env = Env::new();
+    let dir = env.dir("proj");
+    env.ok(&dir, &["init", "demo", "Root"]);
+    let a = env
+        .ok(&dir, &["add", "Parent", "--priority", "p2"])
+        .trim()
+        .to_string();
+    let a1 = env
+        .ok(&dir, &["add", "First", "--parent", &a])
+        .trim()
+        .to_string();
+    let a2 = env
+        .ok(&dir, &["add", "Second", "--parent", &a])
+        .trim()
+        .to_string();
+    let x = env.ok(&dir, &["add", "Prerequisite"]).trim().to_string();
+
+    let ls = env.ok(&dir, &["ls"]);
+    assert_eq!(
+        ls,
+        format!("{a}  p2  todo         Parent\n{x}  p-  todo         Prerequisite\n")
+    );
+
+    env.ok(&dir, &["dep", "add", &a2, &x]);
+    // Both are p2 (x is boosted by a2); a1 is older.
+    let ls = env.ok(&dir, &["ls"]);
+    assert_eq!(
+        ls,
+        format!("{a1}  p2  todo         First  (in: Parent)\n{x}  p2  todo         Prerequisite\n")
+    );
+    let show = env.ok(&dir, &["show", &a2]);
+    assert!(
+        show.contains(&format!("blocked:   yes, waiting on demo/{x}")),
+        "{show}"
+    );
+    let show = env.ok(&dir, &["show", &x]);
+    assert!(show.contains("priority:  p2 (inferred)"), "{show}");
 }

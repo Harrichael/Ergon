@@ -188,6 +188,8 @@ dependencies = [
 name = "ergon"
 version = "0.1.0"
 dependencies = [
+ "anstream",
+ "anstyle",
  "anyhow",
  "chrono",
  "clap",

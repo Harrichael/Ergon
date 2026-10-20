@@ -54,8 +54,8 @@ Don't set `in_progress` yourself: `ergon work` does that when the user starts
 a task.
 
 **Priority.** `p0` (most urgent) to `p4`, or unset. An unset priority is
-inferred: from the task's children if any of them have one, otherwise from its
-parent. A task that blocks another takes on that task's urgency if it's
+inferred: from the task's unfinished children if any of them have one,
+otherwise from its parent. A task that blocks another takes on that task's urgency if it's
 higher. Set priorities sparingly, usually on high-level tasks, and let the
 rest be inferred.
 

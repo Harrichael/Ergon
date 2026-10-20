@@ -1,4 +1,5 @@
 pub mod db;
+pub mod derived;
 pub mod fmt;
 pub mod ops;
 pub mod project;

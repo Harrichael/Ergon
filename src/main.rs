@@ -2,10 +2,13 @@ use anyhow::Result;
 use clap::{Parser, Subcommand};
 use rusqlite::Connection;
 
+use anstream::{print, println};
 use ergon::ops::{self, Changes};
 use ergon::project::{self, Project};
 use ergon::refs::{self, TaskRef};
 use ergon::task::{self, Status, Tasks};
+
+use ergon::derived::Derived;
 use ergon::{db, fmt, view};
 
 /// Minimal task tracker for dispatching work to Claude Code sessions.
@@ -57,6 +60,8 @@ enum Command {
     Show { task: TaskRef },
     /// Show the task tree (default: from the root).
     Tree { task: Option<TaskRef> },
+    /// List the coarsest open, unblocked work, most urgent first.
+    Ls,
     /// Manage dependencies.
     #[command(subcommand)]
     Dep(DepCommand),
@@ -171,14 +176,17 @@ fn run(cli: Cli) -> Result<()> {
         Command::Show { task } => {
             let p = project_for(&conn, &[&task])?;
             let tasks = Tasks::load(&conn, &p)?;
-            print!(
-                "{}",
-                view::show(&tasks, tasks.live(&task.slug)?.id, ergon::now())
-            );
+            let id = tasks.live(&task.slug)?.id;
+            let derived = Derived::compute(&tasks);
+            print!("{}", view::show(&tasks, &derived, id, ergon::now()));
         }
         Command::Tree { task } => {
             let p = project_for(&conn, &task.iter().collect::<Vec<_>>())?;
             print!("{}", tree(&conn, &p, task.as_ref())?);
+        }
+        Command::Ls => {
+            let tasks = Tasks::load(&conn, &project_for(&conn, &[])?)?;
+            print!("{}", view::ls(&tasks, &Derived::compute(&tasks)));
         }
         Command::Dep(DepCommand::Add { task, depends_on }) => {
             let p = project_for(&conn, &[&task, &depends_on])?;
@@ -198,7 +206,7 @@ fn tree(conn: &Connection, p: &Project, task: Option<&TaskRef>) -> Result<String
         Some(r) => tasks.live(&r.slug)?.id,
         None => tasks.root().id,
     };
-    Ok(view::tree(&tasks, id))
+    Ok(view::tree(&tasks, &Derived::compute(&tasks), id))
 }
 
 fn run_project(conn: &Connection, cmd: ProjectCommand) -> Result<()> {
