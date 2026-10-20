@@ -148,3 +148,23 @@ fn task_commands() {
             .contains("invalid status")
     );
 }
+
+#[test]
+fn dependency_commands() {
+    let env = Env::new();
+    let dir = env.dir("proj");
+    env.ok(&dir, &["init", "demo", "Root"]);
+    let a = env.ok(&dir, &["add", "A"]).trim().to_string();
+    let b = env.ok(&dir, &["add", "B"]).trim().to_string();
+
+    env.ok(&dir, &["dep", "add", &a, &b]);
+    let show = env.ok(&dir, &["show", &a]);
+    assert!(show.contains(&format!("Depends on:\n  - {b}")), "{show}");
+    let show = env.ok(&dir, &["show", &b]);
+    assert!(show.contains(&format!("Dependents:\n  - {a}")), "{show}");
+
+    let err = env.err(&dir, &["dep", "add", &b, &a]);
+    assert!(err.contains("wait on each other"), "{err}");
+    env.ok(&dir, &["dep", "rm", &a, &b]);
+    assert!(env.err(&dir, &["dep", "rm", &a, &b]).contains("doesn't depend"));
+}

@@ -37,16 +37,23 @@ pub fn show(tasks: &Tasks, id: i64, now: i64) -> String {
     }
     let _ = writeln!(out, "\n{}", t.intent);
 
-    let children: Vec<_> = tasks.children(id).collect();
-    if !children.is_empty() {
-        let _ = writeln!(out, "\nSubtasks:");
-        for c in children {
+    let sections = [
+        ("Subtasks", tasks.children(id).collect::<Vec<_>>()),
+        ("Depends on", tasks.dependencies(id)),
+        ("Dependents", tasks.dependents(id)),
+    ];
+    for (heading, list) in sections {
+        if list.is_empty() {
+            continue;
+        }
+        let _ = writeln!(out, "\n{heading}:");
+        for t in list {
             let _ = writeln!(
                 out,
                 "  - {}  {:<11}  {}",
-                c.slug,
-                tasks.effective_status(c.id).as_str(),
-                c.title()
+                t.slug,
+                tasks.effective_status(t.id).as_str(),
+                t.title()
             );
         }
     }

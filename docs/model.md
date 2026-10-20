@@ -168,8 +168,11 @@ ergon refuses any change (add, edit, move, restore) that would break these.
    project. Moving a task under itself or one of its descendants is refused.
 5. **Dependencies.** Both tasks are in the same project. Neither is an
    ancestor of the other, and this is checked again when a task is moved. The
-   dependency graph has no cycles. The root has no dependencies in either
-   direction.
+   root has no dependencies in either direction. No tasks may wait on each
+   other in a cycle, where a task waits on its dependencies, its subtasks
+   inherit those waits, and a task waits on its subtasks (it can't be done
+   before them). For example, if `a` depends on `b` and `b` depends on `a1`, a
+   subtask of `a`, then `a1` waits on `b` through `a`: a cycle.
 6. **Root.** The root can't be deleted, moved, cancelled, or given a NULL
    status.
 7. **Sessions are permanent.** Once a task has a Claude session, it can't be

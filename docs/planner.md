@@ -64,7 +64,9 @@ cancelled. Until then, A and all of A's subtasks are **blocked**. Dependencies
 never prevent a status change; they only affect what `ergon ls` offers. Use
 them for real ordering constraints between different branches of the tree.
 A task can't depend on its own ancestor or descendant (the tree already
-relates them), and cycles are refused.
+relates them). Cycles are refused, including indirect ones: a task can't
+finish before its subtasks, and subtasks wait on whatever their ancestors
+depend on.
 
 **`ergon ls`** lists the work that's ready to start: open, unblocked tasks,
 as high in the tree as possible, most urgent first. If a task's subtasks are

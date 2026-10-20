@@ -313,7 +313,136 @@ impl Tasks {
                 );
             }
         }
+        self.validate_deps()
+    }
+
+    fn is_live(&self, id: i64) -> bool {
+        self.tasks.get(&id).is_some_and(|t| !t.is_deleted())
+    }
+
+    /// Dependencies between live tasks, as `(task, depends_on)`.
+    pub fn live_deps(&self) -> impl Iterator<Item = (i64, i64)> + '_ {
+        self.deps
+            .iter()
+            .copied()
+            .filter(|&(t, d)| self.is_live(t) && self.is_live(d))
+    }
+
+    /// Live tasks that `id` depends on, oldest first.
+    pub fn dependencies(&self, id: i64) -> Vec<&Task> {
+        let mut out: Vec<&Task> = self
+            .live_deps()
+            .filter(|&(t, _)| t == id)
+            .map(|(_, d)| self.get(d))
+            .collect();
+        out.sort_by_key(|t| (t.created_at, t.id));
+        out
+    }
+
+    /// Live tasks that depend on `id`, oldest first.
+    pub fn dependents(&self, id: i64) -> Vec<&Task> {
+        let mut out: Vec<&Task> = self
+            .live_deps()
+            .filter(|&(_, d)| d == id)
+            .map(|(t, _)| self.get(t))
+            .collect();
+        out.sort_by_key(|t| (t.created_at, t.id));
+        out
+    }
+
+    fn validate_deps(&self) -> Result<()> {
+        for &(t, d) in &self.deps {
+            if !self.tasks.contains_key(&d) {
+                bail!("{} depends on a task in another project", self.reference(t));
+            }
+        }
+        for (t, d) in self.live_deps() {
+            let (rt, rd) = (self.reference(t), self.reference(d));
+            if t == self.root || d == self.root {
+                bail!("the root task can't have dependencies or dependents");
+            }
+            if t == d {
+                bail!("{rt} can't depend on itself");
+            }
+            if self.is_ancestor(d, t) {
+                bail!("{rt} can't depend on {rd}, its ancestor");
+            }
+            if self.is_ancestor(t, d) {
+                bail!("{rt} can't depend on {rd}, its subtask");
+            }
+        }
+        if let Some(cycle) = self.find_cycle() {
+            let refs: Vec<String> = cycle.iter().map(|&id| self.reference(id)).collect();
+            bail!(
+                "these tasks would wait on each other: {}",
+                refs.join(" -> ")
+            );
+        }
         Ok(())
+    }
+
+    /// A cycle in what live tasks wait on, as a path that starts and ends at
+    /// the same task. A task waits on its dependencies, its subtasks inherit
+    /// those waits (blocking passes down), and a task waits on its subtasks
+    /// (it can't be done before them). So `a -> b -> c -> a1` deadlocks when
+    /// `a1` is a subtask of `a`, though the dependency edges alone don't loop.
+    fn find_cycle(&self) -> Option<Vec<i64>> {
+        let mut edges: HashMap<i64, BTreeSet<i64>> = HashMap::new();
+        for (t, d) in self.live_deps() {
+            for x in std::iter::once(t).chain(self.descendants(t)) {
+                edges.entry(x).or_default().insert(d);
+            }
+        }
+        for t in self.tasks.values().filter(|t| !t.is_deleted()) {
+            if let Some(p) = t.parent_id {
+                edges.entry(p).or_default().insert(t.id);
+            }
+        }
+
+        // 1 = on the current path, 2 = fully explored.
+        let mut state: HashMap<i64, u8> = HashMap::new();
+        let mut path = Vec::new();
+
+        fn visit(
+            n: i64,
+            edges: &HashMap<i64, BTreeSet<i64>>,
+            state: &mut HashMap<i64, u8>,
+            path: &mut Vec<i64>,
+        ) -> Option<Vec<i64>> {
+            state.insert(n, 1);
+            path.push(n);
+            for &m in edges.get(&n).into_iter().flatten() {
+                match state.get(&m) {
+                    Some(1) => {
+                        let start = path.iter().position(|&p| p == m).unwrap();
+                        let mut cycle = path[start..].to_vec();
+                        cycle.push(m);
+                        return Some(cycle);
+                    }
+                    Some(_) => {}
+                    None => {
+                        if let Some(c) = visit(m, edges, state, path) {
+                            return Some(c);
+                        }
+                    }
+                }
+            }
+            path.pop();
+            state.insert(n, 2);
+            None
+        }
+
+        let mut starts: Vec<i64> = edges.keys().copied().collect();
+        starts.sort();
+        for n in starts {
+            if state.contains_key(&n) {
+                continue;
+            }
+            if let Some(c) = visit(n, &edges, &mut state, &mut path) {
+                return Some(c);
+            }
+        }
+        None
     }
 }
 

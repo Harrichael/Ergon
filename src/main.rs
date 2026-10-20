@@ -57,6 +57,17 @@ enum Command {
     Show { task: TaskRef },
     /// Show the task tree (default: from the root).
     Tree { task: Option<TaskRef> },
+    /// Manage dependencies.
+    #[command(subcommand)]
+    Dep(DepCommand),
+}
+
+#[derive(Subcommand)]
+enum DepCommand {
+    /// Record that a task depends on another.
+    Add { task: TaskRef, depends_on: TaskRef },
+    /// Remove a dependency.
+    Rm { task: TaskRef, depends_on: TaskRef },
 }
 
 #[derive(Subcommand)]
@@ -168,6 +179,14 @@ fn run(cli: Cli) -> Result<()> {
         Command::Tree { task } => {
             let p = project_for(&conn, &task.iter().collect::<Vec<_>>())?;
             print!("{}", tree(&conn, &p, task.as_ref())?);
+        }
+        Command::Dep(DepCommand::Add { task, depends_on }) => {
+            let p = project_for(&conn, &[&task, &depends_on])?;
+            ops::dep_add(&mut conn, &p, &task.slug, &depends_on.slug)?;
+        }
+        Command::Dep(DepCommand::Rm { task, depends_on }) => {
+            let p = project_for(&conn, &[&task, &depends_on])?;
+            ops::dep_rm(&mut conn, &p, &task.slug, &depends_on.slug)?;
         }
     }
     Ok(())

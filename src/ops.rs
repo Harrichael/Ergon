@@ -148,6 +148,53 @@ pub fn mv(conn: &mut Connection, project: &Project, slug: &str, new_parent: &str
     commit_valid(tx, project)
 }
 
+/// Records that `task` depends on `depends_on`.
+pub fn dep_add(
+    conn: &mut Connection,
+    project: &Project,
+    task: &str,
+    depends_on: &str,
+) -> Result<()> {
+    let tx = conn.transaction()?;
+    let tasks = Tasks::load(&tx, project)?;
+    let (t, d) = (tasks.live(task)?, tasks.live(depends_on)?);
+    if tasks.deps.contains(&(t.id, d.id)) {
+        bail!(
+            "{} already depends on {}",
+            tasks.reference(t.id),
+            tasks.reference(d.id)
+        );
+    }
+    tx.execute(
+        "INSERT INTO task_deps (task_id, depends_on) VALUES (?1, ?2)",
+        params![t.id, d.id],
+    )?;
+    commit_valid(tx, project)
+}
+
+/// Removes the dependency of `task` on `depends_on`.
+pub fn dep_rm(
+    conn: &mut Connection,
+    project: &Project,
+    task: &str,
+    depends_on: &str,
+) -> Result<()> {
+    let tasks = Tasks::load(conn, project)?;
+    let (t, d) = (tasks.live(task)?, tasks.live(depends_on)?);
+    let removed = conn.execute(
+        "DELETE FROM task_deps WHERE task_id = ?1 AND depends_on = ?2",
+        params![t.id, d.id],
+    )?;
+    if removed == 0 {
+        bail!(
+            "{} doesn't depend on {}",
+            tasks.reference(t.id),
+            tasks.reference(d.id)
+        );
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -355,5 +402,95 @@ mod tests {
             f.tasks().live(&c).unwrap().parent_id,
             Some(f.tasks().live(&a).unwrap().id)
         );
+    }
+
+    fn dep(f: &mut Fixture, t: &str, d: &str) -> Result<()> {
+        dep_add(&mut f.conn, &f.project, t, d)
+    }
+
+    #[test]
+    fn dependency_rules() {
+        let mut f = Fixture::new();
+        let a = f.add(None, None);
+        let a1 = f.add(Some(&a), None);
+        let b = f.add(None, None);
+        let c = f.add(None, None);
+
+        dep(&mut f, &a, &b).unwrap();
+        assert!(
+            dep(&mut f, &a, &b)
+                .unwrap_err()
+                .to_string()
+                .contains("already")
+        );
+        let msg = |r: Result<()>| format!("{:#}", r.unwrap_err());
+        assert!(msg(dep(&mut f, &a, &a)).contains("itself"));
+        assert!(msg(dep(&mut f, &a1, &a)).contains("ancestor"));
+        assert!(msg(dep(&mut f, &a, &a1)).contains("subtask"));
+        assert!(msg(dep(&mut f, &a, "root")).contains("root"));
+        assert!(msg(dep(&mut f, "root", &a)).contains("root"));
+
+        dep(&mut f, &b, &c).unwrap();
+        let err = msg(dep(&mut f, &c, &a));
+        assert!(
+            err.contains("wait on each other") && err.contains(&a) && err.contains(&c),
+            "{err}"
+        );
+        // a1 inherits a's wait on b, so c depending on a1 also deadlocks.
+        assert!(msg(dep(&mut f, &c, &a1)).contains("wait on each other"));
+        // a1 depending on c is fine: it already waits on c through a.
+        dep(&mut f, &a1, &c).unwrap();
+
+        let tasks = f.tasks();
+        let id = |s: &str| tasks.live(s).unwrap().id;
+        let slugs =
+            |v: Vec<&crate::task::Task>| v.into_iter().map(|t| t.slug.clone()).collect::<Vec<_>>();
+        assert_eq!(slugs(tasks.dependencies(id(&a))), std::slice::from_ref(&b));
+        assert_eq!(slugs(tasks.dependents(id(&c))), [a1.clone(), b.clone()]);
+
+        dep_rm(&mut f.conn, &f.project, &a, &b).unwrap();
+        assert!(dep_rm(&mut f.conn, &f.project, &a, &b).is_err());
+    }
+
+    #[test]
+    fn move_rechecks_dependencies() {
+        let mut f = Fixture::new();
+        let a = f.add(None, None);
+        let b = f.add(None, None);
+        dep(&mut f, &a, &b).unwrap();
+        let err = mv(&mut f.conn, &f.project, &a, &b).unwrap_err();
+        assert!(format!("{err:#}").contains("ancestor"), "{err:#}");
+        let err = mv(&mut f.conn, &f.project, &b, &a).unwrap_err();
+        assert!(format!("{err:#}").contains("subtask"), "{err:#}");
+    }
+
+    #[test]
+    fn dependencies_stay_in_one_project() {
+        let mut f = Fixture::new();
+        let a = f.add(None, None);
+        let dir = tempfile::tempdir().unwrap();
+        let other = project::init(&mut f.conn, "q", "Other", dir.path()).unwrap();
+        let x = add(&mut f.conn, &other, None, "x", None, None).unwrap();
+        // Slugs resolve within the given project, so the other project's task
+        // isn't reachable.
+        assert!(dep(&mut f, &a, &x).is_err());
+    }
+
+    #[test]
+    fn cycles_through_subtask_completion() {
+        // P has A and B. B depends on A; A1 depends on B1. A can't finish
+        // before A1, which waits on B1, which inherits B's wait on A.
+        let mut f = Fixture::new();
+        let p = f.add(None, None);
+        let a = f.add(Some(&p), None);
+        let a1 = f.add(Some(&a), None);
+        let b = f.add(Some(&p), None);
+        let b1 = f.add(Some(&b), None);
+        dep(&mut f, &b, &a).unwrap();
+        let err = format!("{:#}", dep(&mut f, &a1, &b1).unwrap_err());
+        assert!(err.contains("wait on each other"), "{err}");
+        // Depending across siblings without the reverse wait is fine.
+        let c = f.add(Some(&p), None);
+        dep(&mut f, &c, &b1).unwrap();
     }
 }
