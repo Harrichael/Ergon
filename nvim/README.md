@@ -13,12 +13,14 @@ pQyk [x] Frontend
 
 ## Install
 
-Needs neovim 0.10+ and `ergon` on `PATH`. With packer:
+Needs neovim 0.10+ and `ergon` on `PATH`. With packer, point it at this
+`nvim/` directory itself; packer's `rtp = 'nvim'` adds the directory too late
+for `plugin/ergon.lua` to run, which leaves `:Ergon` undefined.
 
 ```lua
 use {
-  '~/.local/share/dev-setup/tools/Ergon',
-  rtp = 'nvim',
+  '~/.local/share/dev-setup/tools/Ergon/nvim',
+  as = 'ergon.nvim',
   config = function()
     require('ergon').setup()  -- optional: { cmd = '/path/to/ergon' }
     vim.keymap.set('n', '<leader>eo', '<cmd>Ergon<cr>', { desc = 'ergon: open tasks' })
