@@ -1,9 +1,9 @@
 # Ergon data model
 
 Ergon is a minimal task tracker for dispatching work to Claude Code sessions.
-All state lives in one SQLite database. This document is the reference for the
-model, its rules, and the CLI. It is also given verbatim to the planner session
-(see [Claude sessions](#claude-sessions)).
+All state lives in one SQLite database. This document is the full
+specification of the model, its rules, and the CLI. The planner session gets
+a shorter, role-specific version instead: [planner.md](planner.md).
 
 ## Concepts
 
@@ -20,8 +20,8 @@ model, its rules, and the CLI. It is also given verbatim to the planner session
 
 ## Identifiers
 
-- **Project name**: one or more of `A-Z a-z 0-9 _ -`. Renaming a project
-  breaks nothing.
+- **Project name**: one or more of `A-Z a-z 0-9 _ -`. Renamable: `.ergon`
+  files hold the project's UUID, not its name, so a rename breaks nothing.
 - **Task slug**: 4 random characters from this 41-character alphabet, which
   omits look-alikes (`0 O o 1 l I 5 S s 2 Z z 8 B`, and the capitals
   `C K P U V W X`):
@@ -40,31 +40,50 @@ model, its rules, and the CLI. It is also given verbatim to the planner session
 
 **Current project**: the `--project <name>` flag if given. Otherwise ergon
 walks up from the working directory to the nearest `.ergon` file, which
-identifies the project. Otherwise it's an error. A
+contains the project UUID on a single line. Otherwise it's an error. A
 `project/slug` reference names its own project explicitly.
 
-## Fields
+## Schema
 
-A **project** has a name, a creation time, and may be retired.
+```sql
+CREATE TABLE projects (
+  id         INTEGER PRIMARY KEY,
+  uuid       TEXT    NOT NULL UNIQUE,    -- what .ergon contains
+  name       TEXT    NOT NULL UNIQUE,
+  created_at INTEGER NOT NULL,           -- unix seconds
+  retired_at INTEGER                     -- NULL = active
+);
 
-A **task** has:
+CREATE TABLE tasks (
+  id             INTEGER PRIMARY KEY,
+  project_id     INTEGER NOT NULL REFERENCES projects(id),
+  slug           TEXT    NOT NULL,
+  parent_id      INTEGER REFERENCES tasks(id),   -- NULL only for the root
+  intent         TEXT    NOT NULL,
+  status         TEXT CHECK (status IN ('todo','in_progress','landing','done','cancelled')),
+  priority       INTEGER CHECK (priority BETWEEN 0 AND 4),
+  claude_session TEXT,
+  claude_cwd     TEXT,
+  created_at     INTEGER NOT NULL,
+  updated_at     INTEGER NOT NULL,
+  deleted_at     INTEGER,                        -- soft delete
+  UNIQUE (project_id, slug),
+  CHECK ((claude_session IS NULL) = (claude_cwd IS NULL))
+);
 
-- **slug**: its identifier within the project.
-- **parent**: the task it sits under. Only the root has none.
-- **intent**: free-form text. The first line, capped at 100 characters, is the
-  title.
-- **status**: optional; when unset, the task follows its parent (see
-  [Status](#status)).
-- **priority**: optional, `p0`–`p4`; when unset, it's inferred (see
-  [Priority](#priority)).
-- **dependencies**: the tasks it depends on.
-- **Claude session**: optional; a session id and the directory it was started
-  in (see [Claude sessions](#claude-sessions)).
-- **created** and **updated** times, and a **deleted** time if it's been
-  deleted.
+CREATE UNIQUE INDEX one_root_per_project ON tasks(project_id) WHERE parent_id IS NULL;
 
-All reads and writes go through the `ergon` CLI. Never query or modify the
-database directly.
+CREATE TABLE task_deps (
+  task_id    INTEGER NOT NULL REFERENCES tasks(id),
+  depends_on INTEGER NOT NULL REFERENCES tasks(id),
+  PRIMARY KEY (task_id, depends_on)
+);
+```
+
+The database is at `$ERGON_DB`, or `$XDG_DATA_HOME/ergon/ergon.db` (normally
+`~/.local/share/ergon/ergon.db`). It runs in WAL mode with a busy timeout, so
+concurrent `ergon` calls are safe. The schema version is tracked with
+`PRAGMA user_version`.
 
 ## Status
 
@@ -153,7 +172,7 @@ ergon refuses any change (add, edit, move, restore) that would break these.
 7. **Sessions are permanent.** Once a task has a Claude session, it can't be
    changed or removed.
 
-`updated_at` changes when the task's own intent, status, priority, or session
+A task's updated time changes when the task's own intent, status, priority, or session
 changes. Changes to its children or dependencies don't count.
 
 ## Deletion
@@ -195,8 +214,8 @@ it was started in.
 
 There are two prompts:
 
-- **Planner** (the root task, launched by `ergon init`): this document, the
-  project name, and the root intent. The planner is the only session that's
+- **Planner** (the root task, launched by `ergon init`):
+  [planner.md](planner.md), the project name, and the root intent. The planner is the only session that's
   expected to run `ergon`, to create, edit, and organise the project's tasks.
 - **Work** (every other task):
 
@@ -237,8 +256,9 @@ ergon restore <ref>
 
 ergon show <ref>
     Full intent; stored and effective status and priority; whether it's
-    blocked; dependencies and dependents; session; timestamps; and the
-    children's titles as a bullet list.
+    blocked; dependencies and dependents; session; timestamps; the
+    children's titles as a bullet list; and the subtask and dependent
+    counts that `rm` would require.
 ergon tree [<ref>]
     Indented titles with slug, effective status, and effective priority.
 ergon ls
@@ -247,8 +267,8 @@ ergon dep add <ref> <depends-on-ref>
 ergon dep rm <ref> <depends-on-ref>
 
 ergon work <ref>
-ergon help model
-    Print this document.
+ergon help planner
+    Print planner.md, the planner's instructions.
 ```
 
 Timestamps are stored as unix seconds and shown as local time with a relative
