@@ -2,7 +2,11 @@ use anyhow::Result;
 use clap::{Parser, Subcommand};
 use rusqlite::Connection;
 
-use ergon::{db, fmt, project};
+use ergon::ops::{self, Changes};
+use ergon::project::{self, Project};
+use ergon::refs::{self, TaskRef};
+use ergon::task::{self, Status, Tasks};
+use ergon::{db, fmt, view};
 
 /// Minimal task tracker for dispatching work to Claude Code sessions.
 #[derive(Parser)]
@@ -23,6 +27,36 @@ enum Command {
     /// Manage projects.
     #[command(subcommand)]
     Project(ProjectCommand),
+
+    /// Create a task and print its slug.
+    Add {
+        intent: String,
+        /// Parent task (default: the root).
+        #[arg(long)]
+        parent: Option<TaskRef>,
+        #[arg(long, value_parser = parse_status)]
+        status: Option<Status>,
+        #[arg(long, value_parser = parse_priority)]
+        priority: Option<u8>,
+    },
+    /// Change a task's intent, status or priority.
+    Edit {
+        task: TaskRef,
+        #[arg(long)]
+        intent: Option<String>,
+        /// A status, or `none` to follow the parent's.
+        #[arg(long, value_parser = parse_status_or_none)]
+        status: Option<OrNone<Status>>,
+        /// A priority, or `none` to infer it.
+        #[arg(long, value_parser = parse_priority_or_none)]
+        priority: Option<OrNone<u8>>,
+    },
+    /// Move a task, with its subtree, under a new parent.
+    Mv { task: TaskRef, new_parent: TaskRef },
+    /// Show one task in full.
+    Show { task: TaskRef },
+    /// Show the task tree (default: from the root).
+    Tree { task: Option<TaskRef> },
 }
 
 #[derive(Subcommand)]
@@ -41,6 +75,34 @@ enum ProjectCommand {
     Unretire { name: String },
 }
 
+/// A value, or `none` to unset it.
+#[derive(Clone)]
+struct OrNone<T>(Option<T>);
+
+fn parse_status(s: &str) -> Result<Status, String> {
+    Status::parse(s).map_err(|e| e.to_string())
+}
+
+fn parse_priority(s: &str) -> Result<u8, String> {
+    task::parse_priority(s).map_err(|e| e.to_string())
+}
+
+fn parse_status_or_none(s: &str) -> Result<OrNone<Status>, String> {
+    if s == "none" {
+        Ok(OrNone(None))
+    } else {
+        parse_status(s).map(|v| OrNone(Some(v)))
+    }
+}
+
+fn parse_priority_or_none(s: &str) -> Result<OrNone<u8>, String> {
+    if s == "none" {
+        Ok(OrNone(None))
+    } else {
+        parse_priority(s).map(|v| OrNone(Some(v)))
+    }
+}
+
 fn main() {
     if let Err(e) = run(Cli::parse()) {
         eprintln!("error: {e:#}");
@@ -50,15 +112,74 @@ fn main() {
 
 fn run(cli: Cli) -> Result<()> {
     let mut conn = db::open(&db::default_path()?)?;
+    let cwd = std::env::current_dir()?;
+    let flag = cli.project.as_deref();
+    let project_for =
+        |conn: &Connection, refs: &[&TaskRef]| refs::project_for(conn, flag, &cwd, refs);
+
     match cli.command {
         Command::Init { name, root_intent } => {
-            let cwd = std::env::current_dir()?;
             let p = project::init(&mut conn, &name, &root_intent, &cwd)?;
             println!("Created project {} in {}", p.name, cwd.display());
         }
         Command::Project(cmd) => run_project(&conn, cmd)?,
+
+        Command::Add {
+            intent,
+            parent,
+            status,
+            priority,
+        } => {
+            let p = project_for(&conn, &parent.iter().collect::<Vec<_>>())?;
+            let parent = parent.as_ref().map(|r| r.slug.as_str());
+            println!(
+                "{}",
+                ops::add(&mut conn, &p, parent, &intent, status, priority)?
+            );
+        }
+        Command::Edit {
+            task,
+            intent,
+            status,
+            priority,
+        } => {
+            let p = project_for(&conn, &[&task])?;
+            let changes = Changes {
+                intent,
+                status: status.map(|s| s.0),
+                priority: priority.map(|p| p.0),
+            };
+            for r in ops::edit(&mut conn, &p, &task.slug, changes)? {
+                println!("Also cancelled {r}");
+            }
+        }
+        Command::Mv { task, new_parent } => {
+            let p = project_for(&conn, &[&task, &new_parent])?;
+            ops::mv(&mut conn, &p, &task.slug, &new_parent.slug)?;
+        }
+        Command::Show { task } => {
+            let p = project_for(&conn, &[&task])?;
+            let tasks = Tasks::load(&conn, &p)?;
+            print!(
+                "{}",
+                view::show(&tasks, tasks.live(&task.slug)?.id, ergon::now())
+            );
+        }
+        Command::Tree { task } => {
+            let p = project_for(&conn, &task.iter().collect::<Vec<_>>())?;
+            print!("{}", tree(&conn, &p, task.as_ref())?);
+        }
     }
     Ok(())
+}
+
+fn tree(conn: &Connection, p: &Project, task: Option<&TaskRef>) -> Result<String> {
+    let tasks = Tasks::load(conn, p)?;
+    let id = match task {
+        Some(r) => tasks.live(&r.slug)?.id,
+        None => tasks.root().id,
+    };
+    Ok(view::tree(&tasks, id))
 }
 
 fn run_project(conn: &Connection, cmd: ProjectCommand) -> Result<()> {

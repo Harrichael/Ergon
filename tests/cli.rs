@@ -86,3 +86,65 @@ fn project_lifecycle() {
             .contains("invalid project name")
     );
 }
+
+#[test]
+fn task_commands() {
+    let env = Env::new();
+    let dir = env.dir("proj");
+    let sub = env.dir("proj/deep/er");
+    env.ok(&dir, &["init", "demo", "Root intent"]);
+
+    let a = env.ok(&sub, &["add", "Backend\n\nDetails", "--priority", "p1"]);
+    let a = a.trim();
+    let b = env.ok(&dir, &["add", "API", "--parent", a]);
+    let b = b.trim();
+    let tree = env.ok(&dir, &["tree"]);
+    assert!(
+        tree.contains(&format!("  {a}  todo         p1  Backend")),
+        "{tree}"
+    );
+    assert!(
+        tree.contains(&format!("    {b}  todo         p-  API")),
+        "{tree}"
+    );
+
+    let show = env.ok(&dir, &["show", a]);
+    assert!(
+        show.contains("Details") && show.contains(&format!("- {b}")),
+        "{show}"
+    );
+
+    // References with an explicit project work from anywhere.
+    let elsewhere = env.dir("elsewhere");
+    env.ok(
+        &elsewhere,
+        &["edit", &format!("demo/{b}"), "--status", "landing"],
+    );
+    env.ok(
+        &elsewhere,
+        &["--project", "demo", "edit", a, "--priority", "none"],
+    );
+    assert!(
+        env.err(&elsewhere, &["show", a])
+            .contains("not in an ergon project")
+    );
+
+    let err = env.err(&dir, &["edit", a, "--status", "done"]);
+    assert!(
+        err.contains("refused") && err.contains("can't be landing"),
+        "{err}"
+    );
+    let out = env.ok(&dir, &["edit", a, "--status", "cancelled"]);
+    assert!(out.contains(&format!("Also cancelled demo/{b}")), "{out}");
+
+    env.ok(&dir, &["mv", b, "root"]);
+    assert!(env.err(&dir, &["mv", "root", b]).contains("can't be moved"));
+    assert!(
+        env.err(&dir, &["edit", "root", "--status", "none"])
+            .contains("must have a status")
+    );
+    assert!(
+        env.err(&dir, &["edit", "root", "--status", "nope"])
+            .contains("invalid status")
+    );
+}

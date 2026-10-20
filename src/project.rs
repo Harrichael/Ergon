@@ -10,7 +10,7 @@ use rusqlite::{Connection, OptionalExtension, Row, params};
 pub const MARKER: &str = ".ergon";
 
 /// The root task's fixed slug.
-pub const ROOT_SLUG: &str = "root";
+pub const ROOT_SLUG: &str = crate::slug::ROOT;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Project {

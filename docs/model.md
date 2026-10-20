@@ -99,8 +99,10 @@ concurrent `ergon` calls are safe. The schema version is tracked with
 
 A task's stored status may be NULL. Its **effective status** is its own status
 if set, otherwise its nearest ancestor's. The root's status can't be NULL; it
-starts as `in_progress`. A new direct child of the root gets `todo` unless
-another status is given, so top-level work doesn't inherit `in_progress`.
+starts as `in_progress`. Top-level tasks (direct children of the root) always
+have a stored status, so they don't inherit `in_progress`: a new one gets
+`todo` unless another status is given, a task moved to the top level without a
+status gets `todo`, and unsetting a top-level task's status is refused.
 
 There are no transition rules: any status may change to any other, subject to
 the invariants below.

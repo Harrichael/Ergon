@@ -46,9 +46,10 @@ read as a bullet list of how the parent gets done.
 | `done`        | Finished.                                                  |
 | `cancelled`   | Won't be done.                                             |
 
-A task's status may be unset, in which case it follows its parent's. New
-top-level tasks (direct children of the root) start as `todo` automatically;
-below them, leave status unset unless a task really differs from its parent.
+A task's status may be unset, in which case it follows its parent's. Top-level
+tasks (direct children of the root) always have a status, and start as `todo`
+automatically. Below them, leave status unset unless a task really differs
+from its parent.
 Don't set `in_progress` yourself: `ergon work` does that when the user starts
 a task.
 

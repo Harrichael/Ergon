@@ -1,6 +1,11 @@
 pub mod db;
 pub mod fmt;
+pub mod ops;
 pub mod project;
+pub mod refs;
+pub mod slug;
+pub mod task;
+pub mod view;
 
 /// Current time in unix seconds.
 pub fn now() -> i64 {
