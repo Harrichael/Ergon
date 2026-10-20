@@ -6,7 +6,8 @@ use rusqlite::Connection;
 
 /// Schema migrations, applied in order. Migration `i` brings the database to
 /// `PRAGMA user_version = i + 1`. Never edit a released migration; append.
-const MIGRATIONS: &[&str] = &[r#"
+const MIGRATIONS: &[&str] = &[
+    r#"
 CREATE TABLE projects (
   id         INTEGER PRIMARY KEY,
   uuid       TEXT    NOT NULL UNIQUE,
@@ -42,7 +43,18 @@ CREATE TABLE task_deps (
 );
 
 CREATE INDEX task_deps_depends_on ON task_deps(depends_on);
-"#];
+"#,
+    r#"
+-- Children have no order in meaning, but keep a stable one for display.
+-- Existing children keep their creation order.
+ALTER TABLE tasks ADD COLUMN position INTEGER NOT NULL DEFAULT 0;
+UPDATE tasks SET position = (
+  SELECT COUNT(*) FROM tasks s
+  WHERE s.parent_id = tasks.parent_id
+    AND (s.created_at, s.id) < (tasks.created_at, tasks.id)
+);
+"#,
+];
 
 /// `$ERGON_DB`, else `$XDG_DATA_HOME/ergon/ergon.db`, else
 /// `~/.local/share/ergon/ergon.db`.
@@ -151,6 +163,35 @@ mod tests {
             .pragma_query_value(None, "journal_mode", |r| r.get(0))
             .unwrap();
         assert_eq!(mode, "wal");
+    }
+
+    #[test]
+    fn positions_follow_creation_order() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(MIGRATIONS[0]).unwrap();
+        conn.pragma_update(None, "user_version", 1).unwrap();
+        let p = insert_project(&conn);
+        insert_task(&conn, p, "root", None).unwrap();
+        let root = conn.last_insert_rowid();
+        for (slug, created) in [("Abcd", 5), ("Efgh", 3), ("Jkmn", 5)] {
+            insert_task(&conn, p, slug, Some(root)).unwrap();
+            conn.execute(
+                "UPDATE tasks SET created_at = ?1 WHERE slug = ?2",
+                rusqlite::params![created, slug],
+            )
+            .unwrap();
+        }
+        migrate(&mut conn).unwrap();
+        let mut stmt = conn
+            .prepare("SELECT slug, position FROM tasks ORDER BY slug")
+            .unwrap();
+        let rows: Vec<(String, i64)> = stmt
+            .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))
+            .unwrap()
+            .collect::<rusqlite::Result<_>>()
+            .unwrap();
+        let rows: Vec<(&str, i64)> = rows.iter().map(|(s, p)| (s.as_str(), *p)).collect();
+        assert_eq!(rows, [("Abcd", 1), ("Efgh", 0), ("Jkmn", 2), ("root", 0)]);
     }
 
     #[test]

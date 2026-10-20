@@ -278,6 +278,7 @@ pub fn apply(
     let nodes = resolve(&tasks, text)?;
     let mut out = Vec::new();
     let ids = apply_nodes(&tx, &tasks, &nodes, &mut out)?;
+    describe_reorders(&tasks, &nodes, &ids, &mut out);
     cascade_cancel(&tx, &tasks, &nodes, &ids, &mut out)?;
     delete_absent(&tx, &tasks, &nodes, &ids, &mut out)?;
     Tasks::load(&tx, project)?.validate().context("refused")?;
@@ -364,7 +365,17 @@ fn apply_nodes(
     let mut ids: Vec<i64> = Vec::new();
     let mut names: Vec<String> = Vec::new();
     let mut new_slugs: HashSet<String> = HashSet::new();
-    for n in nodes {
+    // Each node's index among its siblings in the outline.
+    let mut counts: HashMap<Option<usize>, i64> = HashMap::new();
+    let positions: Vec<i64> = nodes
+        .iter()
+        .map(|n| {
+            let c = counts.entry(n.parent).or_default();
+            *c += 1;
+            *c - 1
+        })
+        .collect();
+    for (i, n) in nodes.iter().enumerate() {
         let line = &n.line;
         let parent = n.parent.map_or(root, |p| ids[p]);
         let place = match n.parent {
@@ -383,9 +394,9 @@ fn apply_nodes(
                     .context("couldn't find an unused slug")?;
                 new_slugs.insert(slug.clone());
                 conn.execute(
-                    "INSERT INTO tasks (project_id, slug, parent_id, intent, status, priority, created_at, updated_at)
-                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?7)",
-                    params![tasks.project.id, slug, parent, line.title, status, line.priority, now],
+                    "INSERT INTO tasks (project_id, slug, parent_id, intent, status, priority, created_at, updated_at, position)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?7, ?8)",
+                    params![tasks.project.id, slug, parent, line.title, status, line.priority, now, positions[i]],
                 )?;
                 let name = format!("\"{}\"", line.title);
                 out.push(format!("add {name} {place}"));
@@ -405,6 +416,12 @@ fn apply_nodes(
                         None => "to the top level".to_string(),
                     };
                     out.push(format!("{label}: move {to}"));
+                }
+                if t.position != positions[i] {
+                    conn.execute(
+                        "UPDATE tasks SET position = ?1 WHERE id = ?2",
+                        params![positions[i], id],
+                    )?;
                 }
                 let mut intent = t.intent.clone();
                 if line.title != first_line(&t.intent) {
@@ -463,6 +480,41 @@ fn apply_nodes(
         names.push(name);
     }
     Ok(ids)
+}
+
+/// Notes each parent whose subtasks the outline put in a new order, among
+/// the ones that stayed under it. Moved and new tasks are already described.
+fn describe_reorders(tasks: &Tasks, nodes: &[Node], ids: &[i64], out: &mut Vec<String>) {
+    let root = tasks.root().id;
+    let mut groups: Vec<(Option<usize>, Vec<i64>)> = Vec::new();
+    for n in nodes {
+        let Some(id) = n.id else { continue };
+        let parent = n.parent.map_or(root, |p| ids[p]);
+        if tasks.get(id).parent_id != Some(parent) {
+            continue;
+        }
+        match groups.iter_mut().find(|(p, _)| *p == n.parent) {
+            Some((_, kept)) => kept.push(id),
+            None => groups.push((n.parent, vec![id])),
+        }
+    }
+    for (p, kept) in groups {
+        let parent = p.map_or(root, |p| ids[p]);
+        let before: Vec<i64> = tasks
+            .children(parent)
+            .map(|t| t.id)
+            .filter(|id| kept.contains(id))
+            .collect();
+        if before != kept {
+            out.push(match p {
+                Some(_) => {
+                    let t = tasks.get(parent);
+                    format!("{} {}: reorder subtasks", t.slug, first_line(&t.intent))
+                }
+                None => "reorder top-level tasks".to_string(),
+            });
+        }
+    }
 }
 
 /// Like `ergon edit`, cancelling a task cancels its subtasks that have an

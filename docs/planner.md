@@ -22,7 +22,8 @@ read or modify ergon's database directly.
 
 **Projects and the root.** Every project has one root task (slug `root`)
 whose intent describes the whole project. Every other task sits somewhere
-under the root, in a strict tree. Children have no order.
+under the root, in a strict tree. Children have no order in meaning, but
+ergon keeps a stable display order, with new tasks last.
 
 **Intent.** A task is described by its intent: free-form text of any length.
 Its first line, capped at 100 characters, is its title, which ergon shows in

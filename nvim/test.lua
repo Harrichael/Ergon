@@ -140,6 +140,16 @@ eq(ergon("show", "qxpj", "--intent"), "Backend and database\n\nDetails.", "inten
 vim.cmd.close()
 eq(lines()[2], "qxpj [ ] Backend and database !p0", "outline refreshed")
 
+-- Reordering siblings is kept.
+vim.api.nvim_buf_set_lines(0, 2, 4, false, {
+  "  pQyk [ ] Write tests !p2",
+  "  FTFE [x] Write the API",
+})
+vim.cmd.write()
+assert(prompts[#prompts]:find("qxpj Backend and database: reorder subtasks", 1, true), prompts[#prompts])
+vim.cmd("e!")
+eq(vim.list_slice(lines(), 3), { "  pQyk [ ] Write tests !p2", "  FTFE [x] Write the API" }, "order kept")
+
 -- Nothing changed: no prompt.
 local before = #prompts
 vim.cmd.write()

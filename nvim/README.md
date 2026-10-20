@@ -49,7 +49,8 @@ together, or not at all if ergon refuses one, and an error naming a line moves
 the cursor there. If the project changed since you opened the buffer, the write
 is refused; `:e!` reloads it, discarding your edits.
 
-Sibling order isn't stored, so it resets when the buffer reloads.
+Sibling order is kept, though it means nothing to ergon: new tasks from the
+CLI go last.
 
 The plugin is a thin layer over `ergon outline`, `ergon outline --apply
 [--dry-run]` and `ergon show --intent`. See `ergon outline --help`.

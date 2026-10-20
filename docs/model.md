@@ -13,7 +13,9 @@ a shorter, role-specific version instead: [planner.md](planner.md).
 - **Task**: a piece of work described by its **intent**: free-form text of any
   length. The **title** is the first line of the intent, capped at 100
   characters. Tasks form a strict tree under the root. A child is a subtask;
-  there is no separate notion of a "bullet". Children have no order.
+  there is no separate notion of a "bullet". Children have no order in
+  meaning, but keep a stable display order: new and moved tasks go last, and
+  the outline can rearrange them.
 - **Dependency**: "task A depends on task B". Dependencies are informational:
   they never prevent a status change. They decide what is **blocked**, which
   decides what `ergon ls` offers as work to do next.
@@ -67,6 +69,7 @@ CREATE TABLE tasks (
   created_at     INTEGER NOT NULL,
   updated_at     INTEGER NOT NULL,
   deleted_at     INTEGER,                        -- soft delete
+  position       INTEGER NOT NULL DEFAULT 0,     -- display order among siblings
   UNIQUE (project_id, slug),
   CHECK ((claude_session IS NULL) = (claude_cwd IS NULL))
 );

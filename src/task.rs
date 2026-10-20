@@ -109,6 +109,8 @@ pub struct Task {
     pub created_at: i64,
     pub updated_at: i64,
     pub deleted_at: Option<i64>,
+    /// Display order among siblings; it carries no meaning.
+    pub position: i64,
 }
 
 impl Task {
@@ -126,7 +128,7 @@ impl Task {
 }
 
 const COLUMNS: &str = "id, project_id, slug, parent_id, intent, status, priority, \
-     claude_session, claude_cwd, created_at, updated_at, deleted_at";
+     claude_session, claude_cwd, created_at, updated_at, deleted_at, position";
 
 fn from_row(row: &Row) -> rusqlite::Result<Task> {
     Ok(Task {
@@ -142,6 +144,7 @@ fn from_row(row: &Row) -> rusqlite::Result<Task> {
         created_at: row.get(9)?,
         updated_at: row.get(10)?,
         deleted_at: row.get(11)?,
+        position: row.get(12)?,
     })
 }
 
@@ -176,7 +179,9 @@ impl Tasks {
 
         let mut root = None;
         let mut children: HashMap<i64, Vec<i64>> = HashMap::new();
-        for t in &list {
+        let mut by_position: Vec<&Task> = list.iter().collect();
+        by_position.sort_by_key(|t| (t.position, t.created_at, t.id));
+        for t in by_position {
             match t.parent_id {
                 Some(p) => children.entry(p).or_default().push(t.id),
                 None => root = Some(t.id),
@@ -222,7 +227,7 @@ impl Tasks {
         format!("{}/{}", self.project.name, self.get(id).slug)
     }
 
-    /// Live children, oldest first.
+    /// Live children, in display order.
     pub fn children(&self, id: i64) -> impl Iterator<Item = &Task> {
         self.children
             .get(&id)

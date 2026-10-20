@@ -22,6 +22,15 @@ fn commit_valid(tx: Transaction, project: &Project) -> Result<()> {
     Ok(())
 }
 
+/// The position that puts a new child of `parent` after its siblings.
+fn next_position(conn: &Connection, parent: i64) -> Result<i64> {
+    Ok(conn.query_row(
+        "SELECT COALESCE(MAX(position) + 1, 0) FROM tasks WHERE parent_id = ?1",
+        [parent],
+        |r| r.get(0),
+    )?)
+}
+
 /// Creates a task and returns its slug. The parent defaults to the root, and
 /// a direct child of the root defaults to `todo`.
 pub fn add(
@@ -47,9 +56,9 @@ pub fn add(
         .context("couldn't find an unused slug")?;
     let now = crate::now();
     tx.execute(
-        "INSERT INTO tasks (project_id, slug, parent_id, intent, status, priority, created_at, updated_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?7)",
-        params![project.id, slug, parent.id, intent, status, priority, now],
+        "INSERT INTO tasks (project_id, slug, parent_id, intent, status, priority, created_at, updated_at, position)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?7, ?8)",
+        params![project.id, slug, parent.id, intent, status, priority, now, next_position(&tx, parent.id)?],
     )?;
     commit_valid(tx, project)?;
     Ok(slug)
@@ -116,8 +125,8 @@ pub fn edit(
     Ok(cancelled)
 }
 
-/// Moves a task, with its subtree, under a new parent. A task without a
-/// status that moves to the top level gets `todo`.
+/// Moves a task, with its subtree, under a new parent, after its new
+/// siblings. A task without a status that moves to the top level gets `todo`.
 pub fn mv(conn: &mut Connection, project: &Project, slug: &str, new_parent: &str) -> Result<()> {
     let tx = conn.transaction()?;
     let tasks = Tasks::load(&tx, project)?;
@@ -137,8 +146,8 @@ pub fn mv(conn: &mut Connection, project: &Project, slug: &str, new_parent: &str
     }
 
     tx.execute(
-        "UPDATE tasks SET parent_id = ?1 WHERE id = ?2",
-        params![parent.id, task.id],
+        "UPDATE tasks SET parent_id = ?1, position = ?2 WHERE id = ?3",
+        params![parent.id, next_position(&tx, parent.id)?, task.id],
     )?;
     if parent.is_root() && task.status.is_none() {
         tx.execute(

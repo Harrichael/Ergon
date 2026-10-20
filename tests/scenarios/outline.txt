@@ -183,7 +183,7 @@ FTFE [~] Write the API
   nHcx Document the API !p3
 pQyk [ ] Frontend deps:9cDQ
 
-# Sibling order isn't stored, so reordering changes nothing.
+# Sibling order carries no meaning, but it's kept.
 $ ergon outline --apply <<EOF
 # ergon demo e1d53225
 pQyk [ ] Frontend deps:9cDQ
@@ -194,35 +194,70 @@ qxpj [-] Backend services !p1
   qwpT [-] Write more tests
   9cDQ [-] Write tests !p2 deps:FTFE
 EOF
+reorder top-level tasks
+qxpj Backend services: reorder subtasks
+$ ergon outline
+# ergon demo d1abcda2
+pQyk [ ] Frontend deps:9cDQ
+FTFE [~] Write the API
+  nHcx Document the API !p3
+qxpj [-] Backend services !p1
+  AENA [x] Load test
+  qwpT [-] Write more tests
+  9cDQ [-] Write tests !p2 deps:FTFE
+$ ergon tree
+root  in_progress  p-  Build a demo
+  pQyk  todo         p-  Frontend
+  FTFE  in_progress  p3  Write the API
+    nHcx  in_progress  p3  Document the API
+  qxpj  cancelled    p1  Backend services
+    AENA  done         p1  Load test
+    qwpT  cancelled    p1  Write more tests
+    9cDQ  cancelled    p2  Write tests  blocked
+
+# New and moved tasks go after their siblings.
+$ ergon add Deploy
+FubR
+$ ergon mv FTFE qxpj
+$ ergon outline
+# ergon demo 6dc55bdd
+pQyk [ ] Frontend deps:9cDQ
+qxpj [-] Backend services !p1
+  AENA [x] Load test
+  qwpT [-] Write more tests
+  9cDQ [-] Write tests !p2 deps:FTFE
+  FTFE [~] Write the API
+    nHcx Document the API !p3
+FubR [ ] Deploy
 
 # Mistakes are reported by line.
 $ ergon outline --apply <<EOF
-# ergon demo e1d53225
+# ergon demo 6dc55bdd
 pQyk [ ] Frontend
 pQyk [ ] Frontend again
 EOF
 error: line 3: pQyk is already on line 2
 [exit 1]
 $ ergon outline --apply <<EOF
-# ergon demo e1d53225
+# ergon demo 6dc55bdd
 dFR6 [ ] Docs
 EOF
 error: line 2: dFR6 is deleted; restore it with `ergon restore dFR6` first
 [exit 1]
 $ ergon outline --apply <<EOF
-# ergon demo e1d53225
+# ergon demo 6dc55bdd
 pQyk [ ] Frontend deps:4444
 EOF
 error: line 2: no task 4444 to depend on
 [exit 1]
 $ ergon outline --apply <<EOF
-# ergon demo e1d53225
+# ergon demo 6dc55bdd
 pQyk [ ] Frontend deps:Z
 EOF
 error: line 2: invalid slug "Z" in deps
 [exit 1]
 $ ergon outline --apply <<EOF
-# ergon demo e1d53225
+# ergon demo 6dc55bdd
 pQyk [ ]
 EOF
 error: line 2: missing a title
@@ -233,7 +268,7 @@ EOF
 error: line 1: expected the header `# ergon <project> <version>`
 [exit 1]
 $ ergon outline --apply --project other <<EOF
-# ergon demo e1d53225
+# ergon demo 6dc55bdd
 EOF
 error: the outline is for project demo, not other
 [exit 1]

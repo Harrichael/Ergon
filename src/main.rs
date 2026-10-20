@@ -98,7 +98,7 @@ enum Command {
     /// is the intent's first line; editing it keeps the rest of the intent.
     /// A line without a slug is a new task, and a task whose line is removed
     /// is deleted along with its subtasks, unless they were moved elsewhere.
-    /// Sibling order isn't stored.
+    /// The order of siblings is kept, though it carries no meaning.
     ///
     /// `--apply` reads the edited outline from stdin, applies every change in
     /// one transaction (or none, if any is refused) and prints them. It
