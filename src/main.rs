@@ -9,7 +9,8 @@ use ergon::refs::{self, TaskRef};
 use ergon::task::{self, Status, Tasks};
 
 use ergon::derived::Derived;
-use ergon::{claude, db, fmt, view};
+use ergon::{claude, db, fmt, outline, view};
+use std::io::Read;
 
 /// Minimal task tracker for dispatching work to Claude Code sessions.
 #[derive(Parser)]
@@ -76,11 +77,45 @@ enum Command {
     /// Move a task, with its subtree, under a new parent.
     Mv { task: TaskRef, new_parent: TaskRef },
     /// Show one task in full.
-    Show { task: TaskRef },
+    Show {
+        task: TaskRef,
+        /// Print only the intent.
+        #[arg(long)]
+        intent: bool,
+    },
     /// Show the task tree (default: from the root).
     Tree { task: Option<TaskRef> },
     /// List the coarsest open, unblocked work, most urgent first.
     Ls,
+    /// Print the project as an editable outline, or apply an edited one
+    ///
+    /// Each line is one task, nested by indentation:
+    ///
+    ///     <slug> [<box>] <title> [!p<N>] [deps:<slug>,<slug>]
+    ///
+    /// The box is the status: `[ ]` todo, `[~]` in_progress, `[>]` landing,
+    /// `[x]` done, `[-]` cancelled, or no box to follow the parent. The title
+    /// is the intent's first line; editing it keeps the rest of the intent.
+    /// A line without a slug is a new task, and a task whose line is removed
+    /// is deleted along with its subtasks, unless they were moved elsewhere.
+    /// Sibling order isn't stored.
+    ///
+    /// `--apply` reads the edited outline from stdin, applies every change in
+    /// one transaction (or none, if any is refused) and prints them. It
+    /// refuses an outline printed before the project last changed.
+    #[command(verbatim_doc_comment)]
+    Outline {
+        /// Read an edited outline from stdin and apply it.
+        #[arg(long)]
+        apply: bool,
+        /// With --apply: print the changes without making them.
+        #[arg(long, requires = "apply")]
+        dry_run: bool,
+        /// Print JSON for editors: the outline, plus each line's effective
+        /// priority and blocked state.
+        #[arg(long, conflicts_with = "apply")]
+        json: bool,
+    },
     /// Manage dependencies.
     #[command(subcommand)]
     Dep(DepCommand),
@@ -221,10 +256,14 @@ fn run(cli: Cli) -> Result<()> {
                 println!("Restored {r}");
             }
         }
-        Command::Show { task } => {
+        Command::Show { task, intent } => {
             let p = project_for(&conn, &[&task])?;
             let tasks = Tasks::load(&conn, &p)?;
             let id = tasks.live(&task.slug)?.id;
+            if intent {
+                println!("{}", tasks.get(id).intent);
+                return Ok(());
+            }
             let derived = Derived::compute(&tasks);
             print!("{}", view::show(&tasks, &derived, id, ergon::now()));
         }
@@ -235,6 +274,30 @@ fn run(cli: Cli) -> Result<()> {
         Command::Ls => {
             let tasks = Tasks::load(&conn, &project_for(&conn, &[])?)?;
             print!("{}", view::ls(&tasks, &Derived::compute(&tasks)));
+        }
+        Command::Outline {
+            apply: true,
+            dry_run,
+            ..
+        } => {
+            let mut text = String::new();
+            std::io::stdin().read_to_string(&mut text)?;
+            let (name, _) = outline::header(&text)?;
+            if flag.is_some_and(|f| f != name) {
+                bail!("the outline is for project {name}, not {}", flag.unwrap());
+            }
+            let p = project::by_name(&conn, &name)?;
+            for change in outline::apply(&mut conn, &p, &text, dry_run)? {
+                println!("{change}");
+            }
+        }
+        Command::Outline { json, .. } => {
+            let tasks = Tasks::load(&conn, &project_for(&conn, &[])?)?;
+            if json {
+                print!("{}", outline::json(&tasks, &Derived::compute(&tasks)));
+            } else {
+                print!("{}", outline::render(&tasks).text);
+            }
         }
         Command::Work { task } => {
             let p = project_for(&conn, &[&task])?;

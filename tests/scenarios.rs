@@ -14,6 +14,7 @@
 //! - `$ ergon ...` runs ergon. Arguments are split like a shell: single and
 //!   double quotes group, and `\n` inside double quotes is a newline. Leading
 //!   `NAME=value` words set environment variables for that command only.
+//! - A command ending in `<<EOF` reads the lines up to `EOF` as its stdin.
 //! - `$ cd <dir>` changes directory (created if missing) and `$ rmdir <dir>`
 //!   removes one; both are relative to the scenario's root.
 //! - The expected output is every line up to the next `$ ` line, minus
@@ -42,6 +43,7 @@ struct Step {
     /// Lines before the command: comments and blank lines.
     preamble: Vec<String>,
     command: String,
+    stdin: Option<Vec<String>>,
     expected: Vec<String>,
 }
 
@@ -49,8 +51,16 @@ fn parse(text: &str) -> (Vec<String>, Vec<Step>) {
     let mut header = Vec::new();
     let mut steps: Vec<Step> = Vec::new();
     let mut pending = Vec::new();
+    let mut in_stdin = false;
     for line in text.lines() {
-        if let Some(cmd) = line.strip_prefix("$ ") {
+        if in_stdin {
+            let stdin = steps.last_mut().unwrap().stdin.as_mut().unwrap();
+            if line == "EOF" {
+                in_stdin = false;
+            } else {
+                stdin.push(line.to_string());
+            }
+        } else if let Some(cmd) = line.strip_prefix("$ ") {
             if let Some(last) = steps.last_mut() {
                 // Trailing blank and comment lines belong to the next step.
                 while last
@@ -63,9 +73,15 @@ fn parse(text: &str) -> (Vec<String>, Vec<Step>) {
             } else {
                 header.append(&mut pending);
             }
+            let (command, stdin) = match cmd.strip_suffix(" <<EOF") {
+                Some(c) => (c, Some(Vec::new())),
+                None => (cmd, None),
+            };
+            in_stdin = stdin.is_some();
             steps.push(Step {
                 preamble: std::mem::take(&mut pending),
-                command: cmd.to_string(),
+                command: command.to_string(),
+                stdin,
                 expected: Vec::new(),
             });
         } else if let Some(last) = steps.last_mut() {
@@ -169,7 +185,7 @@ impl Sandbox {
         }
     }
 
-    fn run(&mut self, command: &str) -> Vec<String> {
+    fn run(&mut self, command: &str, stdin: Option<&[String]>) -> Vec<String> {
         let mut words = split(command);
         let mut env = Vec::new();
         while let Some((k, v)) = words.first().and_then(|w| w.split_once('=')) {
@@ -187,13 +203,20 @@ impl Sandbox {
                 std::fs::remove_dir_all(self.root.join(&args[0])).unwrap();
                 Vec::new()
             }
-            "ergon" => self.ergon(args, &env),
+            "ergon" => self.ergon(args, &env, stdin),
             other => panic!("unknown scenario command {other:?}"),
         }
     }
 
-    fn ergon(&self, args: &[String], env: &[(String, String)]) -> Vec<String> {
-        let out = Command::new(env!("CARGO_BIN_EXE_ergon"))
+    fn ergon(
+        &self,
+        args: &[String],
+        env: &[(String, String)],
+        stdin: Option<&[String]>,
+    ) -> Vec<String> {
+        use std::io::Write;
+        use std::process::Stdio;
+        let mut child = Command::new(env!("CARGO_BIN_EXE_ergon"))
             .args(args)
             .current_dir(&self.cwd)
             .env("ERGON_DB", &self.db)
@@ -203,8 +226,23 @@ impl Sandbox {
             .env("TZ", "UTC")
             .env("NO_COLOR", "1")
             .envs(env.iter().map(|(k, v)| (k, v)))
-            .output()
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
             .unwrap();
+        let input: String = stdin
+            .into_iter()
+            .flatten()
+            .map(|l| format!("{l}\n"))
+            .collect();
+        child
+            .stdin
+            .take()
+            .unwrap()
+            .write_all(input.as_bytes())
+            .unwrap();
+        let out = child.wait_with_output().unwrap();
         let mut text = String::from_utf8_lossy(&out.stdout).into_owned();
         text.push_str(&String::from_utf8_lossy(&out.stderr));
         if !out.status.success() {
@@ -226,7 +264,7 @@ fn run_scenario(path: &Path, bless: bool) -> Option<String> {
     let mut sandbox = Sandbox::new();
     let mut failure = None;
     for step in &mut steps {
-        let actual = sandbox.run(&step.command);
+        let actual = sandbox.run(&step.command, step.stdin.as_deref());
         if matches(&step.expected, &actual) {
             continue;
         }
@@ -253,6 +291,14 @@ fn run_scenario(path: &Path, bless: bool) -> Option<String> {
             for line in step.preamble.iter().chain([&format!("$ {}", step.command)]) {
                 out.push_str(line);
                 out.push('\n');
+            }
+            if let Some(stdin) = &step.stdin {
+                out.pop();
+                out.push_str(" <<EOF\n");
+                for line in stdin.iter().chain([&"EOF".to_string()]) {
+                    out.push_str(line);
+                    out.push('\n');
+                }
             }
             for line in &step.expected {
                 out.push_str(line);
@@ -311,4 +357,13 @@ fn runner_parsing() {
     assert_eq!(header, ["# intro", ""]);
     assert_eq!(steps[0].expected, ["out"]);
     assert_eq!(steps[1].preamble, ["", "# next"]);
+
+    let (_, steps) = parse("$ ergon x <<EOF\n# in\n$ not a command\nEOF\nout\n");
+    assert_eq!(steps.len(), 1);
+    assert_eq!(steps[0].command, "ergon x");
+    assert_eq!(
+        steps[0].stdin.as_deref().unwrap(),
+        ["# in", "$ not a command"]
+    );
+    assert_eq!(steps[0].expected, ["out"]);
 }

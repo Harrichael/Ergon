@@ -33,6 +33,7 @@ Commands:
   show     Show one task in full
   tree     Show the task tree (default: from the root)
   ls       List the coarsest open, unblocked work, most urgent first
+  outline  Print the project as an editable outline, or apply an edited one
   dep      Manage dependencies
   work     Start or resume the Claude Code session for a task
   help     Print help for ergon or a command; `ergon help planner` prints the planner's instructions
