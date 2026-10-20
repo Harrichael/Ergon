@@ -46,10 +46,11 @@ read as a bullet list of how the parent gets done.
 | `done`        | Finished.                                                  |
 | `cancelled`   | Won't be done.                                             |
 
-A task's status may be unset, in which case it follows its parent's. Leave
-status unset unless a task really differs from its parent; a fresh subtree
-should usually have `todo` set at its top and nothing below. Don't set
-`in_progress` yourself: `ergon work` does that when the user starts a task.
+A task's status may be unset, in which case it follows its parent's. New
+top-level tasks (direct children of the root) start as `todo` automatically;
+below them, leave status unset unless a task really differs from its parent.
+Don't set `in_progress` yourself: `ergon work` does that when the user starts
+a task.
 
 **Priority.** `p0` (most urgent) to `p4`, or unset. An unset priority is
 inferred: from the task's children if any of them have one, otherwise from its
