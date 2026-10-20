@@ -64,7 +64,7 @@ error: refused: the root task can't have dependencies or dependents
 # before A1, so C depending on A1 also deadlocks.
 $ ergon dep add nHcx pQyk
 $ ergon dep add pQyk qxpj
-error: refused: these tasks would wait on each other: demo/qxpj -> demo/FTFE -> demo/nHcx -> demo/pQyk -> demo/qxpj
+error: refused: these tasks would wait on each other: demo/qxpj -> demo/nHcx -> demo/pQyk -> demo/qxpj
 [exit 1]
 $ ergon dep add pQyk FTFE
 error: refused: these tasks would wait on each other: demo/FTFE -> demo/nHcx -> demo/pQyk -> demo/FTFE

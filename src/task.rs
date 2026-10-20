@@ -436,50 +436,39 @@ impl Tasks {
             }
         }
 
-        // 1 = on the current path, 2 = fully explored.
-        let mut state: HashMap<i64, u8> = HashMap::new();
-        let mut path = Vec::new();
-
-        fn visit(
-            n: i64,
-            edges: &HashMap<i64, BTreeSet<i64>>,
-            state: &mut HashMap<i64, u8>,
-            path: &mut Vec<i64>,
-        ) -> Option<Vec<i64>> {
-            state.insert(n, 1);
-            path.push(n);
-            for &m in edges.get(&n).into_iter().flatten() {
-                match state.get(&m) {
-                    Some(1) => {
-                        let start = path.iter().position(|&p| p == m).unwrap();
-                        let mut cycle = path[start..].to_vec();
-                        cycle.push(m);
-                        return Some(cycle);
-                    }
-                    Some(_) => {}
-                    None => {
-                        if let Some(c) = visit(m, edges, state, path) {
-                            return Some(c);
+        // The shortest cycle, found by a breadth-first search back to each
+        // start; ties go to the lowest start id, so the report is stable.
+        let mut starts: Vec<i64> = edges.keys().copied().collect();
+        starts.sort();
+        let mut best: Option<Vec<i64>> = None;
+        for start in starts {
+            let mut prev: HashMap<i64, i64> = HashMap::new();
+            let mut queue = std::collections::VecDeque::from([start]);
+            'search: while let Some(n) = queue.pop_front() {
+                for &m in edges.get(&n).into_iter().flatten() {
+                    if m == start {
+                        let mut path = vec![start];
+                        let mut cur = n;
+                        while cur != start {
+                            path.push(cur);
+                            cur = prev[&cur];
                         }
+                        let last = path.len();
+                        path[1..last].reverse();
+                        path.push(start);
+                        if best.as_ref().is_none_or(|b| path.len() < b.len()) {
+                            best = Some(path);
+                        }
+                        break 'search;
+                    }
+                    if m != start && !prev.contains_key(&m) {
+                        prev.insert(m, n);
+                        queue.push_back(m);
                     }
                 }
             }
-            path.pop();
-            state.insert(n, 2);
-            None
         }
-
-        let mut starts: Vec<i64> = edges.keys().copied().collect();
-        starts.sort();
-        for n in starts {
-            if state.contains_key(&n) {
-                continue;
-            }
-            if let Some(c) = visit(n, &edges, &mut state, &mut path) {
-                return Some(c);
-            }
-        }
-        None
+        best
     }
 }
 
