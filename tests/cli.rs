@@ -3,16 +3,33 @@ use std::process::{Command, Output};
 
 use tempfile::TempDir;
 
-/// An isolated database plus a working directory to run `ergon` in.
+/// An isolated database plus a working directory to run `ergon` in. `claude`
+/// is always replaced by a fake that records its directory and arguments, so
+/// tests can never start a real session.
 struct Env {
     home: TempDir,
 }
 
 impl Env {
     fn new() -> Self {
-        Env {
-            home: tempfile::tempdir().unwrap(),
-        }
+        let home = tempfile::tempdir().unwrap();
+        let fake = home.path().join("fake-claude");
+        std::fs::write(
+            &fake,
+            "#!/bin/sh\nprintf '%s\\n' \"$PWD\" \"$@\" > \"$ERGON_FAKE_LOG\"\n",
+        )
+        .unwrap();
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&fake, std::fs::Permissions::from_mode(0o755)).unwrap();
+        Env { home }
+    }
+
+    /// The fake claude's last invocation: its directory, then its arguments.
+    fn launched(&self) -> Vec<String> {
+        let log = self.home.path().join("claude.log");
+        let lines = std::fs::read_to_string(&log).unwrap();
+        std::fs::remove_file(&log).unwrap();
+        lines.lines().map(String::from).collect()
     }
 
     fn dir(&self, rel: &str) -> std::path::PathBuf {
@@ -26,6 +43,8 @@ impl Env {
             .args(args)
             .current_dir(cwd)
             .env("ERGON_DB", self.home.path().join("ergon.db"))
+            .env("ERGON_CLAUDE", self.home.path().join("fake-claude"))
+            .env("ERGON_FAKE_LOG", self.home.path().join("claude.log"))
             .output()
             .unwrap()
     }
@@ -58,11 +77,11 @@ fn project_lifecycle() {
     let a = env.dir("a");
     let b = env.dir("b");
 
-    env.ok(&a, &["init", "alpha", "Alpha intent"]);
-    env.ok(&b, &["init", "beta", "Beta intent"]);
+    env.ok(&a, &["init", "alpha", "Alpha intent", "--no-launch"]);
+    env.ok(&b, &["init", "beta", "Beta intent", "--no-launch"]);
     assert!(a.join(".ergon").is_file());
     assert!(
-        env.err(&a, &["init", "again", "x"])
+        env.err(&a, &["init", "again", "x", "--no-launch"])
             .contains("already exists")
     );
 
@@ -92,7 +111,7 @@ fn task_commands() {
     let env = Env::new();
     let dir = env.dir("proj");
     let sub = env.dir("proj/deep/er");
-    env.ok(&dir, &["init", "demo", "Root intent"]);
+    env.ok(&dir, &["init", "demo", "Root intent", "--no-launch"]);
 
     let a = env.ok(&sub, &["add", "Backend\n\nDetails", "--priority", "p1"]);
     let a = a.trim();
@@ -153,7 +172,7 @@ fn task_commands() {
 fn dependency_commands() {
     let env = Env::new();
     let dir = env.dir("proj");
-    env.ok(&dir, &["init", "demo", "Root"]);
+    env.ok(&dir, &["init", "demo", "Root", "--no-launch"]);
     let a = env.ok(&dir, &["add", "A"]).trim().to_string();
     let b = env.ok(&dir, &["add", "B"]).trim().to_string();
 
@@ -176,7 +195,7 @@ fn dependency_commands() {
 fn ls_command() {
     let env = Env::new();
     let dir = env.dir("proj");
-    env.ok(&dir, &["init", "demo", "Root"]);
+    env.ok(&dir, &["init", "demo", "Root", "--no-launch"]);
     let a = env
         .ok(&dir, &["add", "Parent", "--priority", "p2"])
         .trim()
@@ -217,7 +236,7 @@ fn ls_command() {
 fn rm_and_restore() {
     let env = Env::new();
     let dir = env.dir("proj");
-    env.ok(&dir, &["init", "demo", "Root"]);
+    env.ok(&dir, &["init", "demo", "Root", "--no-launch"]);
     let a = env.ok(&dir, &["add", "A"]).trim().to_string();
     env.ok(&dir, &["add", "A1", "--parent", &a]);
     let x = env.ok(&dir, &["add", "X"]).trim().to_string();
@@ -242,4 +261,67 @@ fn rm_and_restore() {
     let out = env.ok(&dir, &["restore", &a]);
     assert_eq!(out.lines().count(), 2, "{out}");
     assert!(env.ok(&dir, &["show", &x]).contains("blocked:   yes"));
+}
+
+#[test]
+fn work_sessions() {
+    let env = Env::new();
+    let dir = env.dir("proj");
+    let other = env.dir("other");
+    let dir_s = dir.to_str().unwrap().to_string();
+
+    // init launches the planner with a fresh session and the planner prompt.
+    env.ok(&dir, &["init", "demo", "Build a demo"]);
+    let l = env.launched();
+    assert_eq!(l[0], dir_s);
+    assert_eq!(l[1], "--session-id");
+    let root_session = l[2].clone();
+    let prompt = l[3..].join("\n");
+    assert!(prompt.starts_with("# You are the planner"), "{prompt}");
+    assert!(prompt.contains("Project: demo") && prompt.contains("Build a demo"), "{prompt}");
+    let show = env.ok(&dir, &["show", "root"]);
+    assert!(show.contains(&format!("session:   {root_session} in {dir_s}")), "{show}");
+
+    // Resuming happens in the recorded directory, wherever ergon runs.
+    env.ok(&other, &["work", "demo/root"]);
+    assert_eq!(env.launched(), [dir_s.clone(), "--resume".into(), root_session]);
+
+    // A first work session records the cwd and starts the task.
+    let a = env.ok(&dir, &["add", "Backend"]).trim().to_string();
+    let b = env.ok(&dir, &["add", "API", "--parent", &a]).trim().to_string();
+    let other_s = other.to_str().unwrap();
+    env.ok(&other, &["work", &format!("demo/{b}")]);
+    let l = env.launched();
+    assert_eq!((l[0].as_str(), l[1].as_str()), (other_s, "--session-id"));
+    let prompt = l[3..].join("\n");
+    assert!(prompt.contains(&format!("Task to complete here (demo/{b}):")), "{prompt}");
+    let show = env.ok(&dir, &["show", &b]);
+    assert!(show.contains("status:    in_progress\n"), "{show}");
+    assert!(show.contains(&format!(" in {other_s}")), "{show}");
+    // a was already todo -> its child's work doesn't touch it.
+    assert!(env.ok(&dir, &["show", &a]).contains("status:    todo"));
+
+    // Closed tasks can't be worked; blocked ones warn.
+    let done = env.ok(&dir, &["add", "Done", "--status", "done"]).trim().to_string();
+    assert!(env.err(&dir, &["work", &done]).contains("is done"));
+    let blocked = env.ok(&dir, &["add", "Blocked"]).trim().to_string();
+    env.ok(&dir, &["dep", "add", &blocked, &a]);
+    let out = env.run_in(&dir, &["work", &blocked]);
+    assert!(out.status.success());
+    assert!(String::from_utf8_lossy(&out.stderr).contains("is blocked"));
+    env.launched();
+
+    // A vanished session directory is an error.
+    std::fs::remove_dir(&other).unwrap();
+    assert!(env.err(&dir, &["work", &b]).contains("no longer exists"));
+}
+
+#[test]
+fn help_topics() {
+    let env = Env::new();
+    let dir = env.dir("x");
+    assert!(env.ok(&dir, &["help", "planner"]).starts_with("# You are the planner"));
+    assert!(env.ok(&dir, &["help"]).contains("Usage: ergon"));
+    assert!(env.ok(&dir, &["help", "rm"]).contains("--subtasks"));
+    assert!(env.err(&dir, &["help", "nope"]).contains("no help topic"));
 }

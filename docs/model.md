@@ -223,6 +223,9 @@ it was started in.
 - **Afterwards:** changes to the recorded directory (an error if it no longer
   exists) and launches `claude --resume <uuid>`.
 
+ergon runs the `claude` found on `PATH`, or `$ERGON_CLAUDE` if set, and checks
+it exists before recording a session.
+
 There are two prompts:
 
 - **Planner** (the root task, launched by `ergon init`):

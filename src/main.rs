@@ -1,5 +1,5 @@
-use anyhow::Result;
-use clap::{Parser, Subcommand};
+use anyhow::{Result, bail};
+use clap::{CommandFactory, Parser, Subcommand};
 use rusqlite::Connection;
 
 use anstream::{print, println};
@@ -9,11 +9,11 @@ use ergon::refs::{self, TaskRef};
 use ergon::task::{self, Status, Tasks};
 
 use ergon::derived::Derived;
-use ergon::{db, fmt, view};
+use ergon::{claude, db, fmt, view};
 
 /// Minimal task tracker for dispatching work to Claude Code sessions.
 #[derive(Parser)]
-#[command(version)]
+#[command(version, disable_help_subcommand = true)]
 struct Cli {
     /// Project to act on, instead of the one named by the nearest .ergon file.
     #[arg(long, global = true)]
@@ -25,8 +25,15 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
-    /// Create a project and its root task, and write .ergon here.
-    Init { name: String, root_intent: String },
+    /// Create a project and its root task, write .ergon here, and launch the
+    /// planner session.
+    Init {
+        name: String,
+        root_intent: String,
+        /// Don't launch the planner; start it later with `ergon work root`.
+        #[arg(long)]
+        no_launch: bool,
+    },
     /// Manage projects.
     #[command(subcommand)]
     Project(ProjectCommand),
@@ -77,6 +84,11 @@ enum Command {
     /// Manage dependencies.
     #[command(subcommand)]
     Dep(DepCommand),
+    /// Start or resume the Claude Code session for a task.
+    Work { task: TaskRef },
+    /// Print help for ergon or a command; `ergon help planner` prints the
+    /// planner's instructions.
+    Help { topic: Option<String> },
 }
 
 #[derive(Subcommand)]
@@ -139,6 +151,9 @@ fn main() {
 }
 
 fn run(cli: Cli) -> Result<()> {
+    if let Command::Help { topic } = &cli.command {
+        return help(topic.as_deref());
+    }
     let mut conn = db::open(&db::default_path()?)?;
     let cwd = std::env::current_dir()?;
     let flag = cli.project.as_deref();
@@ -146,9 +161,16 @@ fn run(cli: Cli) -> Result<()> {
         |conn: &Connection, refs: &[&TaskRef]| refs::project_for(conn, flag, &cwd, refs);
 
     match cli.command {
-        Command::Init { name, root_intent } => {
+        Command::Init {
+            name,
+            root_intent,
+            no_launch,
+        } => {
             let p = project::init(&mut conn, &name, &root_intent, &cwd)?;
             println!("Created project {} in {}", p.name, cwd.display());
+            if !no_launch {
+                launch(claude::work(&mut conn, &p, project::ROOT_SLUG, &cwd)?)?;
+            }
         }
         Command::Project(cmd) => run_project(&conn, cmd)?,
 
@@ -214,6 +236,11 @@ fn run(cli: Cli) -> Result<()> {
             let tasks = Tasks::load(&conn, &project_for(&conn, &[])?)?;
             print!("{}", view::ls(&tasks, &Derived::compute(&tasks)));
         }
+        Command::Work { task } => {
+            let p = project_for(&conn, &[&task])?;
+            launch(claude::work(&mut conn, &p, &task.slug, &cwd)?)?;
+        }
+        Command::Help { .. } => unreachable!("handled above"),
         Command::Dep(DepCommand::Add { task, depends_on }) => {
             let p = project_for(&conn, &[&task, &depends_on])?;
             ops::dep_add(&mut conn, &p, &task.slug, &depends_on.slug)?;
@@ -222,6 +249,26 @@ fn run(cli: Cli) -> Result<()> {
             let p = project_for(&conn, &[&task, &depends_on])?;
             ops::dep_rm(&mut conn, &p, &task.slug, &depends_on.slug)?;
         }
+    }
+    Ok(())
+}
+
+fn launch(l: claude::Launch) -> Result<()> {
+    if let Some(w) = &l.warning {
+        anstream::eprintln!("warning: {w}");
+    }
+    l.exec()
+}
+
+fn help(topic: Option<&str>) -> Result<()> {
+    let mut cmd = Cli::command();
+    match topic {
+        None => cmd.print_help()?,
+        Some("planner") => print!("{}", claude::PLANNER_DOC),
+        Some(name) => match cmd.find_subcommand_mut(name) {
+            Some(sub) => sub.print_help()?,
+            None => bail!("no help topic {name:?}; try `ergon help`"),
+        },
     }
     Ok(())
 }

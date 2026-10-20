@@ -1,3 +1,4 @@
+pub mod claude;
 pub mod db;
 pub mod derived;
 pub mod fmt;
