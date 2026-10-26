@@ -22,8 +22,7 @@ read or modify ergon's database directly.
 
 **Projects and the root.** Every project has one root task (slug `root`)
 whose intent describes the whole project. Every other task sits somewhere
-under the root, in a strict tree. Children have no order in meaning, but
-ergon keeps a stable display order, with new tasks last.
+under the root, in a strict tree.
 
 **Intent.** A task is described by its intent: free-form text of any length.
 Its first line, capped at 100 characters, is its title, which ergon shows in
@@ -35,7 +34,11 @@ printed by `ergon add`. Copy slugs exactly. Refer to a task by its slug.
 
 **Subtasks.** A child is a subtask. It may be a whole unit of work, or just a
 step of its parent's approach: there is no distinction. The children's titles
-read as a bullet list of how the parent gets done.
+read as a bullet list of how the parent gets done. A Claude Code session will
+get a subtree of tasks, perhaps a single leaf, or a subtree with the subtasks as
+effectively an outline description. The user will refine the task interactively
+with any given Claude Code session, so explicitly do NOT spell everything out
+here.
 
 **Status.** One of:
 
@@ -54,10 +57,9 @@ differs from its parent. Don't set `in_progress` yourself: `ergon work` does
 that when the user starts a task.
 
 **Priority.** `p0` (most urgent) to `p4`, or unset. An unset priority is
-inferred: from the task's unfinished children if any of them have one,
-otherwise from its parent. A task that blocks another takes on that task's
-urgency if it's higher. Set priorities sparingly, usually on high-level tasks,
-and let the rest be inferred.
+inferred, as this a sparse priority system. Unfinished children, ancestors, and
+dependecies are all used for that. Set priorities sparingly, usually on
+high-level tasks, and let the rest be inferred.
 
 **Dependencies.** "A depends on B" means A shouldn't start until B is done or
 cancelled. Until then, A and all of A's subtasks are **blocked**. Dependencies
@@ -82,30 +84,14 @@ only this context:
 - the task's own intent, plus the intents of its non-cancelled subtasks.
 
 It does **not** see sibling tasks, dependencies, other branches, or this
-conversation. So every intent must stand on its own: anything the work
-session needs to know (decisions made, constraints, where things live, what
-"done" looks like) must be in its own intent or an ancestor's. Context that
-applies to a whole subtree belongs in the intent of that subtree's top task.
+conversation. So every intent must stand on its own in terms of meaning. Context
+that applies to a whole subtree belongs in the intent of that subtree's top
+task.
 
 ## Rules ergon enforces
 
 ergon refuses changes that would break these. If a command is refused, read
 the error, then adjust or ask the user.
-
-- A `done` task can only have `done` or `cancelled` subtasks. To add work
-  under a finished task, the user must reopen it first.
-- A `landing` task can only have `landing`, `done` or `cancelled` subtasks.
-- Cancelling a task also cancels its unfinished subtasks.
-- A task can't be moved under itself or one of its own subtasks.
-- The root can't be deleted, moved, cancelled, or have its status unset.
-- A task's Claude session, once recorded by `ergon work`, is permanent.
-
-**Deleting.** `ergon rm` deletes a task and its whole subtree. To guard
-against mistakes, it requires the number of subtasks being deleted and the
-number of tasks outside the subtree that depend on it. `ergon show` prints
-the exact `ergon rm` command with the current counts; if the counts are wrong,
-nothing is deleted. Dependencies on deleted tasks count as satisfied.
-`ergon restore` undoes a deletion.
 
 ## Commands
 
