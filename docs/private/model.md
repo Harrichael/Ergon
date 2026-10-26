@@ -3,7 +3,7 @@
 Ergon is a minimal task tracker for dispatching work to Claude Code sessions.
 All state lives in one SQLite database. This document is the full
 specification of the model, its rules, and the CLI. The planner session gets
-a shorter, role-specific version instead: [planner.md](planner.md).
+a shorter, role-specific version instead: [planner.md](../prompts/planner.md).
 
 ## Concepts
 
@@ -246,7 +246,7 @@ it exists before recording a session.
 There are two prompts:
 
 - **Planner** (the root task, launched by `ergon init`):
-  [planner.md](planner.md), the project name, and the root intent. The planner is the only session that's
+  [planner.md](../prompts/planner.md), the project name, and the root intent. The planner is the only session that's
   expected to run `ergon`, to create, edit, and organise the project's tasks.
 - **Work** (every other task):
 

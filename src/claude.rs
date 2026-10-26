@@ -1,17 +1,18 @@
 //! Launching Claude Code sessions attached to tasks.
 
+use std::collections::HashMap;
 use std::ffi::OsString;
-use std::fmt::Write;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
 use rusqlite::{Connection, params};
+use serde::Serialize;
 
 use crate::project::Project;
 use crate::task::{Status, Tasks};
 
 /// The planner's instructions, also printed by `ergon help planner`.
-pub const PLANNER_DOC: &str = include_str!("../docs/planner.md");
+pub const PLANNER_DOC: &str = include_str!("../docs/prompts/planner.md");
 
 /// A `claude` invocation, ready to run.
 #[derive(Debug)]
@@ -135,50 +136,99 @@ pub fn planner_prompt(tasks: &Tasks) -> String {
     )
 }
 
-pub fn work_prompt(tasks: &Tasks, id: i64) -> String {
-    let mut out = String::from("Greater context that your work sits within:\n\n");
-    for a in tasks.ancestors(id).into_iter().rev() {
-        bullet(&mut out, &tasks.get(a).intent, 0, None);
-        out.push('\n');
-    }
-    let _ = writeln!(out, "Task to complete here ({}):\n", tasks.reference(id));
-    let _ = writeln!(out, "{}\n", tasks.get(id).intent);
-    let before = out.len();
-    write_subtasks(tasks, id, 0, &mut out);
-    if out.len() > before {
-        out.push('\n');
-    }
-    out.push_str("Ask the user how they'd like to start.\n");
-    out
+/// The work session's prompt; its wording and layout live in the template.
+const WORK_TEMPLATE: &str = include_str!("../docs/prompts/work.md.tera");
+
+/// An intent as the template reads it: its first line, and the rest.
+#[derive(Serialize)]
+struct Intent<'a> {
+    title: &'a str,
+    body: &'a str,
 }
 
-fn write_subtasks(tasks: &Tasks, id: i64, depth: usize, out: &mut String) {
+impl<'a> Intent<'a> {
+    /// The whole first line, not the title capped for display: a prompt must
+    /// not lose the end of a long one.
+    fn of(intent: &'a str) -> Self {
+        let intent = intent.trim();
+        let (title, rest) = intent.split_once('\n').unwrap_or((intent, ""));
+        // Skip blank lines, but keep the first body line's own indentation.
+        let start = rest
+            .find(|c: char| !c.is_whitespace())
+            .map_or(rest.len(), |i| rest[..i].rfind('\n').map_or(0, |n| n + 1));
+        Intent {
+            title: title.trim_end(),
+            body: &rest[start..],
+        }
+    }
+}
+
+#[derive(Serialize)]
+struct Outlined<'a> {
+    #[serde(flatten)]
+    intent: Intent<'a>,
+    /// Two spaces per level of its outline.
+    pad: String,
+    marker: Option<Status>,
+}
+
+pub fn work_prompt(tasks: &Tasks, id: i64) -> String {
+    let ancestors: Vec<Outlined> = tasks
+        .ancestors(id)
+        .into_iter()
+        .rev()
+        .enumerate()
+        .map(|(depth, a)| Outlined {
+            intent: Intent::of(&tasks.get(a).intent),
+            pad: "  ".repeat(depth),
+            marker: None,
+        })
+        .collect();
+    let mut subtasks = Vec::new();
+    collect_subtasks(tasks, id, 0, &mut subtasks);
+
+    let mut ctx = tera::Context::new();
+    ctx.insert("ancestors", &ancestors);
+    ctx.insert("reference", &tasks.reference(id));
+    ctx.insert("task", &Intent::of(&tasks.get(id).intent));
+    ctx.insert("subtasks", &subtasks);
+    let mut tera = tera::Tera::default();
+    tera.register_filter("indent", indent);
+    tera.add_raw_template("work.md", WORK_TEMPLATE)
+        .and_then(|_| tera.render("work.md", &ctx))
+        .expect("the work template is built in and its context complete")
+}
+
+fn collect_subtasks<'a>(tasks: &'a Tasks, id: i64, depth: usize, out: &mut Vec<Outlined<'a>>) {
     for c in tasks.children(id) {
         let status = tasks.effective_status(c.id);
         if status == Status::Cancelled {
             continue;
         }
-        let marker = matches!(status, Status::Done | Status::Landing).then_some(status);
-        bullet(out, &c.intent, depth, marker);
-        write_subtasks(tasks, c.id, depth + 1, out);
+        out.push(Outlined {
+            intent: Intent::of(&c.intent),
+            pad: "  ".repeat(depth),
+            marker: matches!(status, Status::Done | Status::Landing).then_some(status),
+        });
+        collect_subtasks(tasks, c.id, depth + 1, out);
     }
 }
 
-/// Writes `intent` as a bullet at `depth`, with continuation lines aligned.
-fn bullet(out: &mut String, intent: &str, depth: usize, marker: Option<Status>) {
-    let indent = "  ".repeat(depth);
-    let marker = marker.map(|s| format!("[{s}] ")).unwrap_or_default();
-    for (i, line) in intent.lines().enumerate() {
-        match (i, line.is_empty()) {
-            (0, _) => {
-                let _ = writeln!(out, "{indent}- {marker}{line}");
+/// `text | indent(with=PREFIX)`: PREFIX before every line but blank ones.
+fn indent(value: &tera::Value, args: &HashMap<String, tera::Value>) -> tera::Result<tera::Value> {
+    let text = value.as_str().ok_or("indent takes text")?;
+    let prefix = args.get("with").and_then(|p| p.as_str()).unwrap_or("  ");
+    let lines: Vec<String> = text
+        .lines()
+        .map(|l| {
+            if l.trim().is_empty() {
+                String::new()
+            } else {
+                format!("{prefix}{l}")
             }
-            (_, true) => out.push('\n'),
-            (_, false) => {
-                let _ = writeln!(out, "{indent}  {line}");
-            }
-        }
-    }
+        })
+        .collect();
+    Ok(lines.join("\n").into())
 }
 
 #[cfg(test)]
@@ -203,7 +253,7 @@ mod tests {
         };
         let a = add(&mut conn, None, "Backend");
         let b = add(&mut conn, Some(&a), "Write the API\nUse REST.");
-        let c = add(&mut conn, Some(&b), "Routes");
+        let c = add(&mut conn, Some(&b), "Routes\n\nUnder /api.\n\nVersioned.");
         let d = add(&mut conn, Some(&b), "Auth");
         let e = add(&mut conn, Some(&b), "Dropped");
         for (slug, status) in [(&d, Status::Done), (&e, Status::Cancelled)] {
@@ -213,7 +263,7 @@ mod tests {
             };
             ops::edit(&mut conn, &p, slug, changes).unwrap();
         }
-        add(&mut conn, Some(&c), "Nested");
+        let n = add(&mut conn, Some(&c), "Nested\nOne level down.");
 
         let tasks = Tasks::load(&conn, &p).unwrap();
         let prompt = work_prompt(&tasks, tasks.live(&b).unwrap().id);
@@ -223,23 +273,41 @@ mod tests {
                 "Greater context that your work sits within:
 
 - Build a demo
-
-  Project context.
-
-- Backend
+  - Backend
 
 Task to complete here (demo/{b}):
 
 Write the API
+
 Use REST.
 
 - Routes
+  Under /api.
+
+  Versioned.
   - Nested
+    One level down.
 - [done] Auth
 
 Ask the user how they'd like to start.
 "
             )
         );
+
+        let leaf = work_prompt(&tasks, tasks.live(&n).unwrap().id);
+        assert!(leaf.ends_with(&format!(
+            "  - Backend
+    - Write the API
+      - Routes
+
+Task to complete here (demo/{n}):
+
+Nested
+
+One level down.
+
+Ask the user how they'd like to start.
+"
+        )));
     }
 }

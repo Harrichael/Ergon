@@ -1,0 +1,43 @@
+{#
+  The prompt a task's Claude session starts with (`ergon work`).
+
+  Every task comes as its intent split in two: `title`, its first line, and
+  `body`, the rest (empty when there is none).
+
+  ancestors   the tasks from the root down to the task's parent, each
+              also with `pad`: two spaces per level below the root
+  reference   the task's reference, e.g. demo/E6dn
+  task        the task itself
+  subtasks    its non-cancelled subtree, depth-first, each also with
+                pad      two spaces per level below the task
+                marker   "done", "landing", or null
+
+  `text | indent(with=PREFIX)` puts PREFIX before every non-blank line.
+
+  Tags are indented by nesting and open with `{%-`, which drops the
+  indentation and the line break before the tag, so a tag's line prints
+  nothing. A blank line goes after a tag: one before it is dropped too.
+#}Greater context that your work sits within:
+{# a blank line before the outline #}
+{%- for a in ancestors %}
+{{ a.pad }}- {{ a.title }}
+{%- endfor %}
+
+Task to complete here ({{ reference }}):
+
+{{ task.title }}
+{%- if task.body %}
+
+{{ task.body }}
+{%- endif %}
+{%- if subtasks %}
+{# a blank line before the outline #}
+  {%- for t in subtasks %}
+{{ t.pad }}- {% if t.marker %}[{{ t.marker }}] {% endif %}{{ t.title }}
+    {%- if t.body %}
+{{ t.body | indent(with=t.pad ~ "  ") }}
+    {%- endif %}
+  {%- endfor %}
+{%- endif %}
+
+Ask the user how they'd like to start.

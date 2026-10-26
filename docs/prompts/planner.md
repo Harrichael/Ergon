@@ -24,10 +24,11 @@ read or modify ergon's database directly.
 whose intent describes the whole project. Every other task sits somewhere
 under the root, in a strict tree.
 
-**Intent.** A task is described by its intent: free-form text of any length.
-Its first line, capped at 100 characters, is its title, which ergon shows in
-lists and trees. Write intents as a short summary line, then a blank line,
-then the detail.
+**Intent.** A task is described by its intent: free-form text of any length,
+in two parts. The first line is its **title**, which ergon shows in lists and
+trees, capped at 100 characters. Everything after it is its **body**: the
+detail. Write a short title, a blank line, then the body. A task whose title
+says it all needs no body.
 
 **Slugs.** Each task has a 4-character, case-sensitive slug like `E6dn`,
 printed by `ergon add`. Copy slugs exactly. Refer to a task by its slug.
@@ -80,8 +81,10 @@ unblocked ones individually.
 When the user runs `ergon work` on a task, a fresh Claude session starts with
 only this context:
 
-- the intents of the task's ancestors, from the root down, and
-- the task's own intent, plus the intents of its non-cancelled subtasks.
+- the title and body of each of the task's ancestors, from the root down,
+- the task's own title and body, and
+- its non-cancelled subtasks as a nested outline: each title, with its body
+  under it.
 
 It does **not** see sibling tasks, dependencies, other branches, or this
 conversation. So every intent must stand on its own in terms of meaning. Context
