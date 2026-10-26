@@ -49,8 +49,12 @@ enum Command {
         status: Option<Status>,
         #[arg(long, value_parser = parse_priority)]
         priority: Option<u8>,
+        /// A Fibonacci number. A sized task is one unit of work: its subtasks
+        /// are steps, and no task above or below it can have a size.
+        #[arg(long, value_parser = parse_size)]
+        size: Option<u32>,
     },
-    /// Change a task's intent, status or priority.
+    /// Change a task's intent, status, priority or size.
     Edit {
         task: TaskRef,
         #[arg(long)]
@@ -61,6 +65,9 @@ enum Command {
         /// A priority, or `none` to infer it.
         #[arg(long, value_parser = parse_priority_or_none)]
         priority: Option<OrNone<u8>>,
+        /// A Fibonacci number, or `none` to add it up from the subtasks.
+        #[arg(long, value_parser = parse_size_or_none)]
+        size: Option<OrNone<u32>>,
     },
     /// Delete a task and its subtree. The counts must match `show`.
     Rm {
@@ -87,18 +94,24 @@ enum Command {
     Tree { task: Option<TaskRef> },
     /// List the coarsest open, unblocked work, most urgent first.
     Ls,
-    /// Print the project as an editable outline, or apply an edited one
+    /// Print the project as an editable table, or apply an edited one
     ///
-    /// Each line is one task, nested by indentation:
+    /// Each row is one task: nine cells, then the title.
     ///
-    ///     <slug> [<box>] <title> [!p<N>] [deps:<slug>,<slug>]
+    ///     <slug> <status> ~<status> <priority> ~<priority> <size> ~<size> <deps> ~blocked <title>
     ///
-    /// The box is the status: `[ ]` todo, `[~]` in_progress, `[>]` landing,
-    /// `[x]` done, `[-]` cancelled, or no box to follow the parent. The title
-    /// is the intent's first line; editing it keeps the rest of the intent.
-    /// A line without a slug is a new task, and a task whose line is removed
-    /// is deleted along with its subtasks, unless they were moved elsewhere.
-    /// The order of siblings is kept, though it carries no meaning.
+    /// `-` is an empty cell. Cells starting with `~` are calculated: the
+    /// actual status, the effective priority, the size added up from
+    /// subtasks, and whether the task is blocked. Editing one is refused.
+    /// Status `-` follows the parent's; priority is `p0`..`p4`; size is a
+    /// Fibonacci number; deps are slugs, comma-separated.
+    ///
+    /// The title is the intent's first line; editing it keeps the rest of the
+    /// intent. The root's comes first and bare; every other title starts with
+    /// `- `, indented two spaces per level under the root. A row with slug `-`
+    /// is a new task, and a task whose row is removed is deleted along with
+    /// its subtasks, unless they were moved elsewhere. The order of siblings
+    /// is kept, though it carries no meaning.
     ///
     /// `--apply` reads the edited outline from stdin, applies every change in
     /// one transaction (or none, if any is refused) and prints them. It
@@ -111,8 +124,12 @@ enum Command {
         /// With --apply: print the changes without making them.
         #[arg(long, requires = "apply")]
         dry_run: bool,
+        /// Read an edited outline from stdin and print it lined up again,
+        /// titles re-indented from their nesting. Applies nothing.
+        #[arg(long, conflicts_with_all = ["apply", "json"])]
+        format: bool,
         /// Print JSON for editors: the outline, plus each line's effective
-        /// priority and blocked state.
+        /// priority, size and blocked state.
         #[arg(long, conflicts_with = "apply")]
         json: bool,
     },
@@ -173,6 +190,18 @@ fn parse_priority(s: &str) -> Result<u8, String> {
     task::parse_priority(s).map_err(|e| e.to_string())
 }
 
+fn parse_size(s: &str) -> Result<u32, String> {
+    task::parse_size(s).map_err(|e| e.to_string())
+}
+
+fn parse_size_or_none(s: &str) -> Result<OrNone<u32>, String> {
+    if s == "none" {
+        Ok(OrNone(None))
+    } else {
+        parse_size(s).map(|v| OrNone(Some(v)))
+    }
+}
+
 fn parse_status_or_none(s: &str) -> Result<OrNone<Status>, String> {
     if s == "none" {
         Ok(OrNone(None))
@@ -225,12 +254,13 @@ fn run(cli: Cli) -> Result<()> {
             parent,
             status,
             priority,
+            size,
         } => {
             let p = project_for(&conn, &parent.iter().collect::<Vec<_>>())?;
             let parent = parent.as_ref().map(|r| r.slug.as_str());
             println!(
                 "{}",
-                ops::add(&mut conn, &p, parent, &intent, status, priority)?
+                ops::add(&mut conn, &p, parent, &intent, status, priority, size)?
             );
         }
         Command::Edit {
@@ -238,12 +268,14 @@ fn run(cli: Cli) -> Result<()> {
             intent,
             status,
             priority,
+            size,
         } => {
             let p = project_for(&conn, &[&task])?;
             let changes = Changes {
                 intent,
                 status: status.map(|s| s.0),
                 priority: priority.map(|p| p.0),
+                size: size.map(|s| s.0),
             };
             for r in ops::edit(&mut conn, &p, &task.slug, changes)? {
                 println!("Also cancelled {r}");
@@ -302,10 +334,15 @@ fn run(cli: Cli) -> Result<()> {
                 println!("{change}");
             }
         }
+        Command::Outline { format: true, .. } => {
+            let mut text = String::new();
+            std::io::stdin().read_to_string(&mut text)?;
+            print!("{}", outline::format(&text)?);
+        }
         Command::Outline { json, .. } => {
             let tasks = Tasks::load(&conn, &project_for(&conn, &[])?)?;
             if json {
-                print!("{}", outline::json(&tasks, &Derived::compute(&tasks)));
+                print!("{}", outline::json(&tasks));
             } else {
                 print!("{}", outline::render(&tasks).text);
             }

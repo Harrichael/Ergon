@@ -249,7 +249,7 @@ mod tests {
         )
         .unwrap();
         let add = |conn: &mut Connection, parent: Option<&str>, intent: &str| {
-            ops::add(conn, &p, parent, intent, None, None).unwrap()
+            ops::add(conn, &p, parent, intent, None, None, None).unwrap()
         };
         let a = add(&mut conn, None, "Backend");
         let b = add(&mut conn, Some(&a), "Write the API\nUse REST.");

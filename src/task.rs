@@ -85,6 +85,26 @@ pub fn parse_priority(s: &str) -> Result<u8> {
     }
 }
 
+/// Parses a size: a Fibonacci number, 1 or more.
+pub fn parse_size(s: &str) -> Result<u32> {
+    let n: u32 = s
+        .parse()
+        .ok()
+        .filter(|&n| is_fibonacci(n))
+        .with_context(|| {
+            format!("invalid size {s:?}: expected a Fibonacci number: 1, 2, 3, 5, 8, 13, ...")
+        })?;
+    Ok(n)
+}
+
+fn is_fibonacci(n: u32) -> bool {
+    let (mut a, mut b) = (1u64, 2u64);
+    while a < n as u64 {
+        (a, b) = (b, a + b);
+    }
+    n >= 1 && a == n as u64
+}
+
 pub const TITLE_MAX_CHARS: usize = 100;
 
 /// The first line of `intent`, capped at 100 characters.
@@ -105,6 +125,8 @@ pub struct Task {
     pub intent: String,
     pub status: Option<Status>,
     pub priority: Option<u8>,
+    /// A size marks the task as one unit of work; its subtasks are steps.
+    pub size: Option<u32>,
     pub claude_session: Option<String>,
     pub claude_cwd: Option<String>,
     pub created_at: i64,
@@ -129,7 +151,7 @@ impl Task {
 }
 
 const COLUMNS: &str = "id, project_id, slug, parent_id, intent, status, priority, \
-     claude_session, claude_cwd, created_at, updated_at, deleted_at, position";
+     claude_session, claude_cwd, created_at, updated_at, deleted_at, position, size";
 
 fn from_row(row: &Row) -> rusqlite::Result<Task> {
     Ok(Task {
@@ -146,6 +168,7 @@ fn from_row(row: &Row) -> rusqlite::Result<Task> {
         updated_at: row.get(10)?,
         deleted_at: row.get(11)?,
         position: row.get(12)?,
+        size: row.get(13)?,
     })
 }
 
@@ -347,6 +370,19 @@ impl Tasks {
                     self.reference(t.id)
                 );
             }
+            if t.size.is_some()
+                && let Some(a) = self
+                    .ancestors(t.id)
+                    .into_iter()
+                    .find(|&a| self.get(a).size.is_some())
+            {
+                let (ra, rt) = (self.reference(a), self.reference(t.id));
+                bail!(
+                    "{ra} and its subtask {rt} can't both be sized: a size marks one \
+                     unit of work, and its subtasks are steps of it. Unsize one: \
+                     `ergon edit {ra} --size none` or `ergon edit {rt} --size none`"
+                );
+            }
             let status = effective[&t.id];
             for a in self.ancestors(t.id) {
                 let reason = match effective[&a] {
@@ -509,6 +545,12 @@ mod tests {
         assert_eq!(parse_priority("P4").unwrap(), 4);
         for bad in ["p5", "2", "p", "p10"] {
             assert!(parse_priority(bad).is_err(), "{bad}");
+        }
+        for good in [1, 2, 3, 5, 8, 13, 21, 89, 2971215073] {
+            assert_eq!(parse_size(&good.to_string()).unwrap(), good);
+        }
+        for bad in ["0", "4", "6", "100", "-1", "x", "2971215074"] {
+            assert!(parse_size(bad).is_err(), "{bad}");
         }
     }
 }

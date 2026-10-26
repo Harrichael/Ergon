@@ -64,6 +64,7 @@ CREATE TABLE tasks (
   intent         TEXT    NOT NULL,
   status         TEXT CHECK (status IN ('todo','in_progress','landing','done','cancelled')),
   priority       INTEGER CHECK (priority BETWEEN 0 AND 4),
+  size           INTEGER CHECK (size > 0),               -- a Fibonacci number
   claude_session TEXT,
   claude_cwd     TEXT,
   created_at     INTEGER NOT NULL,
@@ -152,6 +153,30 @@ Effective priority is shown bold when it equals the stored priority, and cyan
 when it's inferred or boosted. Tasks with no priority display as a dimmed `p-`
 and sort after `p4`.
 
+## Size
+
+A size is a unitless Fibonacci number (1, 2, 3, 5, 8, 13, ...) stored on a
+task, or NULL. A sized task is one **unit of work**; its subtasks are steps
+of it. So no sized task has a sized ancestor (invariant 8), and a sized
+task's size is its own: nothing under it counts.
+
+Every other task with sized work under it has a computed size, summed over
+its children that aren't cancelled:
+
+- **total**: the sum of their totals. A sized task's total is its size.
+- **left**: the sum of what's left. A sized task has its size left while its
+  effective status is open, and nothing once it's landing or done.
+- **partial**: some child has no size and nothing sized under it, so the
+  sums are a floor.
+
+A task with no size and nothing sized under it, and every step of a sized
+task, has no size.
+
+Views show sizes only once some task in the project has one: `5` for a stored
+size, in bold, and for a computed one, in cyan, the total when nothing is
+done (`13`) or `left/total` (`8/13`), with `+` when partial. `show` spells
+it out, or names the sized task a step belongs to.
+
 ## Blocked
 
 A task is **blocked** if any task it depends on has an effective status that
@@ -171,8 +196,8 @@ For example: P has children A and B. If both are unblocked, `ls` shows P. If B
 is blocked, `ls` shows A.
 
 Results are sorted by effective priority, then oldest first. Each row shows:
-slug, effective priority, effective status, title, and, below the top level, a
-dimmed `(in: <parent title>)`.
+slug, effective priority, effective status, size (once any task has one),
+title, and, below the top level, a dimmed `(in: <parent title>)`.
 
 ## Invariants
 
@@ -199,8 +224,10 @@ ergon refuses any change (add, edit, move, restore) that would break these.
    status.
 7. **Sessions are permanent.** Once a task has a Claude session, it can't be
    changed or removed.
+8. **Sizes don't nest.** No sized task has a sized ancestor among live tasks.
+   The refusal names both tasks and the command to unsize either.
 
-A task's updated time changes when the task's own intent, status, priority, or session
+A task's updated time changes when the task's own intent, status, priority, size, or session
 changes. Changes to its children or dependencies don't count.
 
 ## Deletion
@@ -278,25 +305,27 @@ ergon project rename <old> <new>
 ergon project retire <name>
 ergon project unretire <name>
 
-ergon add <intent> [--parent <ref>] [--status <status>] [--priority <pN>]
+ergon add <intent> [--parent <ref>] [--status <status>] [--priority <pN>] [--size <N>]
     Create a task (under the root by default) and print its slug.
-ergon edit <ref> [--intent <text>] [--status <status>|none] [--priority <pN>|none]
+ergon edit <ref> [--intent <text>] [--status <status>|none] [--priority <pN>|none] [--size <N>|none]
 ergon mv <ref> <new-parent-ref>
 ergon rm <ref> --subtasks <N> --dependents <M>
 ergon restore <ref>
 
 ergon show <ref> [--intent]
-    With --intent, just the intent. Otherwise: full intent; stored and effective status and priority; whether it's
+    With --intent, just the intent. Otherwise: full intent; stored and effective status and priority; size; whether it's
     blocked; dependencies and dependents; session; timestamps; the
     children's titles as a bullet list; and the exact `ergon rm` command,
     with the subtask and dependent counts it requires.
 ergon tree [<ref>]
-    Indented titles with slug, effective status, and effective priority.
+    Indented titles with slug, effective status, effective priority, and size.
 ergon ls
 ergon outline [--json]
 ergon outline --apply [--dry-run]
-    The project as editable text, one line per task, and applying an
-    edited copy back in one transaction. See `ergon outline --help`.
+ergon outline --format
+    The project as an editable table, one row per task; applying an
+    edited copy back in one transaction; and lining an edited copy up
+    again. See `ergon outline --help`.
 
 ergon dep add <ref> <depends-on-ref>
 ergon dep rm <ref> <depends-on-ref>

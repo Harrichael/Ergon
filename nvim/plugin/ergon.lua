@@ -31,20 +31,20 @@ vim.api.nvim_create_autocmd("BufWriteCmd", {
   end,
 })
 
--- Colours match the CLI: stored priority bold, inferred cyan.
+-- Colours match the CLI: stored values bold, calculated ones cyan.
 local function highlights()
   local set = function(name, opts)
     vim.api.nvim_set_hl(0, name, vim.tbl_extend("force", { default = true }, opts))
   end
   set("ErgonHeader", { link = "Comment" })
   set("ErgonSlug", { link = "Comment" })
+  set("ErgonEmpty", { link = "NonText" })
+  set("ErgonMarker", { link = "Delimiter" })
   set("ErgonTodo", { link = "Delimiter" })
   set("ErgonInProgress", { link = "DiagnosticWarn" })
   set("ErgonLanding", { link = "DiagnosticInfo" })
-  set("ErgonDone", { link = "Comment" })
-  set("ErgonCancelled", { link = "Comment" })
+  set("ErgonFinished", { link = "Comment" })
   set("ErgonPriority", { bold = true })
-  set("ErgonDeps", { link = "Special" })
   set("ErgonInferred", { link = "DiagnosticHint" })
   set("ErgonBlocked", { link = "DiagnosticWarn" })
 end

@@ -10,10 +10,11 @@ use serde::{Deserialize, Serialize};
 
 use crate::project::{self, Project};
 use crate::slug;
-use crate::task::{Status, Tasks};
+use crate::task::{Status, Tasks, parse_size};
 
-/// The format this ergon writes and the newest it reads.
-const FORMAT: u32 = 1;
+/// The format this ergon writes and the newest it reads. Format 2 added
+/// sizes; an older ergon would drop them, so it must refuse the export.
+const FORMAT: u32 = 2;
 
 #[derive(Serialize, Deserialize)]
 struct Export {
@@ -45,6 +46,8 @@ struct TaskData {
     intent: String,
     status: Option<Status>,
     priority: Option<u8>,
+    #[serde(default)]
+    size: Option<u32>,
     claude_session: Option<String>,
     claude_cwd: Option<String>,
     created_at: i64,
@@ -85,6 +88,7 @@ pub fn export(conn: &Connection, projects: &[Project]) -> Result<String> {
                     intent: t.intent.clone(),
                     status: t.status,
                     priority: t.priority,
+                    size: t.size,
                     claude_session: t.claude_session.clone(),
                     claude_cwd: t.claude_cwd.clone(),
                     created_at: t.created_at,
@@ -142,6 +146,9 @@ fn import_project(conn: &Connection, p: &ProjectData) -> Result<()> {
         if !slug::is_valid(&t.slug) {
             bail!("invalid task slug {:?}", t.slug);
         }
+        if let Some(n) = t.size {
+            parse_size(&n.to_string()).with_context(|| format!("task {}", t.slug))?;
+        }
     }
     match p.tasks.iter().filter(|t| t.parent.is_none()).count() {
         1 => {}
@@ -183,8 +190,8 @@ fn import_project(conn: &Connection, p: &ProjectData) -> Result<()> {
     for t in &p.tasks {
         conn.execute(
             "INSERT INTO tasks (id, project_id, slug, parent_id, intent, status, priority,
-               claude_session, claude_cwd, created_at, updated_at, deleted_at, position)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
+               claude_session, claude_cwd, created_at, updated_at, deleted_at, position, size)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
             params![
                 ids[t.slug.as_str()],
                 project_id,
@@ -198,7 +205,8 @@ fn import_project(conn: &Connection, p: &ProjectData) -> Result<()> {
                 t.created_at,
                 t.updated_at,
                 t.deleted_at,
-                t.position
+                t.position,
+                t.size
             ],
         )
         .with_context(|| format!("adding task {}", t.slug))?;
@@ -232,11 +240,20 @@ mod tests {
         let mut conn = db::open_in_memory().unwrap();
         let dir = tempfile::tempdir().unwrap();
         let p = project::init(&mut conn, "alpha", "Alpha\n\nContext.", dir.path()).unwrap();
-        let a = ops::add(&mut conn, &p, None, "A", None, Some(1)).unwrap();
-        let b = ops::add(&mut conn, &p, Some(&a), "B", Some(Status::InProgress), None).unwrap();
-        let c = ops::add(&mut conn, &p, None, "C", None, None).unwrap();
-        let d = ops::add(&mut conn, &p, Some(&c), "D", None, None).unwrap();
-        let e = ops::add(&mut conn, &p, None, "E", None, None).unwrap();
+        let a = ops::add(&mut conn, &p, None, "A", None, Some(1), None).unwrap();
+        let b = ops::add(
+            &mut conn,
+            &p,
+            Some(&a),
+            "B",
+            Some(Status::InProgress),
+            None,
+            None,
+        )
+        .unwrap();
+        let c = ops::add(&mut conn, &p, None, "C", None, None, None).unwrap();
+        let d = ops::add(&mut conn, &p, Some(&c), "D", None, None, None).unwrap();
+        let e = ops::add(&mut conn, &p, None, "E", None, None, Some(3)).unwrap();
         ops::dep_add(&mut conn, &p, &c, &e).unwrap();
         ops::rm(&mut conn, &p, &d, 0, 0).unwrap();
         // A child created before its parent: import must still order them.
@@ -260,7 +277,7 @@ mod tests {
     #[test]
     fn refuses_bad_exports_entirely() {
         let mut conn = db::open_in_memory().unwrap();
-        let newer = r#"{"format": 2, "projects": []}"#;
+        let newer = r#"{"format": 3, "projects": []}"#;
         let err = import(&mut conn, newer).unwrap_err().to_string();
         assert!(err.contains("newer than this ergon reads"), "{err}");
 
@@ -297,6 +314,14 @@ mod tests {
             (
                 vec![task("Abcd", Some("root"))],
                 "expected one root task, found 0",
+            ),
+            (
+                {
+                    let mut t = task("Abcd", Some("root"));
+                    t["size"] = 4.into();
+                    vec![task("root", None), t]
+                },
+                "invalid size \"4\"",
             ),
         ];
         for (tasks, want) in cases {

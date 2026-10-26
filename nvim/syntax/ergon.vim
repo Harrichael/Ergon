@@ -1,18 +1,23 @@
-" An ergon outline: `<slug> [<box>] <title> [!p<N>] [deps:<slug>,...]`.
+" An ergon outline: a header, then one row per task: nine cells (slug,
+" status, ~status, priority, ~priority, size, ~size, deps, ~blocked) and the
+" title. `-` is an empty cell; `~` cells are calculated.
 if exists("b:current_syntax")
   finish
 endif
 
-syn match ergonHeader /\%1l^#.*$/
-syn match ergonSlug /^\s*\zs[34679ADEFGHJLMNQRTYabcdefghijkmnpqrtuvwxy]\{4}\ze\s/
-syn match ergonPriority /\s\zs!p[0-4]\ze\(\s\|$\)/
-syn match ergonDeps /\s\zsdeps:\S*/
-syn match ergonTodo /^\s*\(\S\{4} \)\=\zs\[ \]/
-syn match ergonInProgress /^\s*\(\S\{4} \)\=\zs\[\~\]/
-syn match ergonLanding /^\s*\(\S\{4} \)\=\zs\[>\]/
-" Finished tasks are dimmed from the box on. The highlight groups are set in
+syn match ergonSlug /^\S\+/
+syn match ergonEmpty /\s\zs-\ze\s\s/
+syn match ergonInferred /\s\zs\~\S\+/
+syn match ergonBlocked /\s\zs\~blocked\>/
+syn match ergonPriority /\s\zsp[0-4]\ze\s/
+syn match ergonTodo /^\S\+\s\+\zstodo\>/
+syn match ergonInProgress /^\S\+\s\+\zsin_progress\>/
+syn match ergonLanding /^\S\+\s\+\zslanding\>/
+syn match ergonMarker /\s\zs-\ze \S/
+" Finished tasks are dimmed whole, by their actual status. Defined last, so
+" it wins over the matches above. The highlight groups are set in
 " plugin/ergon.lua.
-syn match ergonDone /^\s*\(\S\{4} \)\=\zs\[[xX]\].*$/
-syn match ergonCancelled /^\s*\(\S\{4} \)\=\zs\[-\].*$/
+syn match ergonFinished /^\S\+\s\+\S\+\s\+\~\(done\|cancelled\)\>.*$/
+syn match ergonHeader /\%1l^#.*$/
 
 let b:current_syntax = "ergon"

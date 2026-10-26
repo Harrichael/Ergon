@@ -1,0 +1,101 @@
+# Sizes. A sized task is one unit of work; its subtasks are steps of it.
+# Tasks above units add them up; views show sizes once any task has one.
+
+$ ergon init demo Root --no-launch
+Created project demo in $ROOT
+
+$ ergon add Epic
+qxpj
+$ ergon add API --parent qxpj --size 5
+FTFE
+$ ergon add Routes --parent FTFE
+nHcx
+$ ergon add UI --parent qxpj --size 8
+pQyk
+$ ergon add Docs --parent qxpj
+9cDQ
+$ ergon tree
+root  in_progress  p-  13+  Root
+  qxpj  todo         p-  13+  Epic
+    FTFE  todo         p-  5    API
+      nHcx  todo         p-  -    Routes
+    pQyk  todo         p-  8    UI
+    9cDQ  todo         p-  -    Docs
+
+# Sizes are Fibonacci numbers.
+$ ergon edit pQyk --size 4
+error: invalid value '4' for '--size <SIZE>': invalid size "4": expected a Fibonacci number: 1, 2, 3, 5, 8, 13, ...
+
+For more information, try '--help'.
+[exit 2]
+
+# Sized tasks never nest, from either end.
+$ ergon edit nHcx --size 2
+error: refused: demo/FTFE and its subtask demo/nHcx can't both be sized: a size marks one unit of work, and its subtasks are steps of it. Unsize one: `ergon edit demo/FTFE --size none` or `ergon edit demo/nHcx --size none`
+[exit 1]
+$ ergon edit qxpj --size 13
+error: refused: demo/qxpj and its subtask demo/FTFE can't both be sized: a size marks one unit of work, and its subtasks are steps of it. Unsize one: `ergon edit demo/qxpj --size none` or `ergon edit demo/FTFE --size none`
+[exit 1]
+
+$ ergon show qxpj
+demo/qxpj  Epic
+status:    todo
+priority:  p-
+size:      13 left of 13, plus unsized work (added up from subtasks)
+blocked:   no
+parent:    demo/root  Root
+created:   2025-10-09 08:53 (just now)
+updated:   2025-10-09 08:53 (just now)
+delete:    ergon rm demo/qxpj --subtasks 4 --dependents 0
+
+Epic
+
+Subtasks:
+  - FTFE  todo         API
+  - pQyk  todo         UI
+  - 9cDQ  todo         Docs
+$ ergon show nHcx
+demo/nHcx  Routes
+status:    todo (inherited)
+priority:  p-
+size:      - (a step of demo/FTFE)
+blocked:   no
+parent:    demo/FTFE  API
+created:   2025-10-09 08:53 (just now)
+updated:   2025-10-09 08:53 (just now)
+delete:    ergon rm demo/nHcx --subtasks 0 --dependents 0
+
+Routes
+
+# Done work leaves the total but not what's left; cancelled work leaves both.
+$ ergon edit FTFE --status done
+$ ergon edit 9cDQ --status cancelled
+$ ergon ls
+qxpj  p-  todo         8/13  Epic
+$ ergon tree
+root  in_progress  p-  8/13  Root
+  qxpj  todo         p-  8/13  Epic
+    FTFE  done         p-  0/5   API
+      nHcx  done         p-  -     Routes
+    pQyk  todo         p-  8     UI
+    9cDQ  cancelled    p-  -     Docs
+
+# The outline carries stored sizes, and calculated ones as ~ cells.
+$ ergon outline
+# ergon demo 73ad186b
+root  in_progress  ~in_progress  -  -  -  ~8/13  -  -         Root
+qxpj  todo         ~todo         -  -  -  ~8/13  -  -         - Epic
+FTFE  done         ~done         -  -  5  ~0/5   -  -           - API
+nHcx  -            ~done         -  -  -  -      -  -             - Routes
+pQyk  -            ~todo         -  -  8  ~8     -  -           - UI
+9cDQ  cancelled    ~cancelled    -  -  -  -      -  -           - Docs
+$ ergon outline --apply <<EOF
+# ergon demo 73ad186b
+root  in_progress  ~in_progress  -  -  -  ~8/13  -  -         Root
+qxpj  todo         ~todo         -  -  -  ~8/13  -  -         - Epic
+FTFE  done         ~done         -  -  5  ~0/5   -  -           - API
+nHcx  -            ~done         -  -  -  -      -  -             - Routes
+pQyk  -            ~todo         -  -  13  ~8     -  -           - UI
+9cDQ  cancelled    ~cancelled    -  -  -  -      -  -           - Docs
+EOF
+pQyk UI: size 8 -> 13

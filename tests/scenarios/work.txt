@@ -62,14 +62,12 @@ $ ergon work demo/FTFE
 Greater context that your work sits within:
 
 - Build a demo
-
-  Project context.
-
-- Backend
+  - Backend
 
 Task to complete here (demo/FTFE):
 
 Write the API
+
 Use REST.
 
 - Routes
@@ -129,8 +127,6 @@ $ ergon work qwpT
 Greater context that your work sits within:
 
 - Build a demo
-
-  Project context.
 
 Task to complete here (demo/qwpT):
 

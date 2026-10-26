@@ -62,6 +62,15 @@ inferred, as this a sparse priority system. Unfinished children, ancestors, and
 dependecies are all used for that. Set priorities sparingly, usually on
 high-level tasks, and let the rest be inferred.
 
+**Size.** A size, without a unit, is a Fibonacci number: 1, 2, 3, 5, 8, 13,
+and so on. Size only when the user asks. When asked to size, here is the mental
+process: consider the right granularity of work that is estimateable in size -
+this depends on the work. Note that subtasks won't need to be sized, but sizing
+will aggregate by addition up to ancestors. Then mentally stack rank the tasks
+by size. Choose fibonacci numbers such that everything's size is relative and
+proprotional to each other. At the end, the whole project will now have a rough
+number for the project's size.
+
 **Dependencies.** "A depends on B" means A shouldn't start until B is done or
 cancelled. Until then, A and all of A's subtasks are **blocked**. Dependencies
 never prevent a status change; they only affect what `ergon ls` offers. Use
@@ -100,7 +109,8 @@ the error, then adjust or ask the user.
 
 ```
 ergon tree [<slug>]
-    The task tree, with slug, status and priority for each task.
+    The task tree, with slug, status and priority for each task, and size
+    once any task has one.
 ergon show <slug>
     One task in full: intent, status, priority, blocked or not,
     dependencies and dependents, subtask titles, and the command to
@@ -108,10 +118,10 @@ ergon show <slug>
 ergon ls
     Work that's ready to start.
 
-ergon add <intent> [--parent <slug>] [--status <status>] [--priority <pN>]
+ergon add <intent> [--parent <slug>] [--status <status>] [--priority <pN>] [--size <N>]
     Create a task (under the root by default) and print its slug.
-ergon edit <slug> [--intent <text>] [--status <status>|none] [--priority <pN>|none]
-    Change a task. `none` unsets the status or priority.
+ergon edit <slug> [--intent <text>] [--status <status>|none] [--priority <pN>|none] [--size <N>|none]
+    Change a task. `none` unsets the status, priority or size.
 ergon mv <slug> <new-parent-slug>
     Move a task, with its subtree, under a different parent.
 ergon rm <slug> --subtasks <N> --dependents <M>

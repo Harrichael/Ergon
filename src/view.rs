@@ -28,6 +28,26 @@ fn priority(tasks: &Tasks, derived: &Derived, id: i64) -> String {
     }
 }
 
+/// The size column, padded to `width`: bold if stored, cyan if added up.
+/// Views show it only once some task in the project has a size.
+fn size(derived: &Derived, id: i64, width: usize) -> String {
+    match derived.size(id) {
+        None => format!("{DIM}{:<width$}{DIM:#}", "-"),
+        Some(s) => {
+            let style = if s.stored { STORED } else { INFERRED };
+            format!("{style}{:<width$}{style:#}", s.label())
+        }
+    }
+}
+
+fn size_width(derived: &Derived, ids: impl IntoIterator<Item = i64>) -> usize {
+    ids.into_iter()
+        .filter_map(|id| derived.size(id))
+        .map(|s| s.label().len())
+        .max()
+        .unwrap_or(1)
+}
+
 fn status(tasks: &Tasks, id: i64) -> String {
     format!("{:<11}", tasks.effective_status(id).as_str())
 }
@@ -52,6 +72,27 @@ pub fn show(tasks: &Tasks, derived: &Derived, id: i64, now: i64) -> String {
         (None, Some(_)) => " (inferred)".to_string(),
     };
     let _ = writeln!(out, "priority:  {}{note}", priority(tasks, derived, id));
+    if derived.sized() {
+        let line = match derived.size(id) {
+            Some(s) if s.stored && s.left == 0 => format!("{} (finished)", s.total),
+            Some(s) if s.stored => s.total.to_string(),
+            Some(s) => format!(
+                "{} left of {}{} (added up from subtasks)",
+                s.left,
+                s.total,
+                if s.partial { ", plus unsized work" } else { "" }
+            ),
+            None => match tasks
+                .ancestors(id)
+                .into_iter()
+                .find(|&a| tasks.get(a).size.is_some())
+            {
+                Some(a) => format!("- (a step of {})", tasks.reference(a)),
+                None => "-".to_string(),
+            },
+        };
+        let _ = writeln!(out, "size:      {line}");
+    }
 
     let waiting_on = derived::blocked_by(tasks, id);
     if waiting_on.is_empty() {
@@ -110,21 +151,32 @@ pub fn show(tasks: &Tasks, derived: &Derived, id: i64, now: i64) -> String {
 
 /// The subtree under `id` as indented titles.
 pub fn tree(tasks: &Tasks, derived: &Derived, id: i64) -> String {
+    let width = derived
+        .sized()
+        .then(|| size_width(derived, std::iter::once(id).chain(tasks.descendants(id))));
     let mut out = String::new();
-    write_tree(tasks, derived, id, 0, &mut out);
+    write_tree(tasks, derived, id, 0, width, &mut out);
     out
 }
 
-fn write_tree(tasks: &Tasks, derived: &Derived, id: i64, depth: usize, out: &mut String) {
+fn write_tree(
+    tasks: &Tasks,
+    derived: &Derived,
+    id: i64,
+    depth: usize,
+    width: Option<usize>,
+    out: &mut String,
+) {
     let t = tasks.get(id);
     let blocked = if derived.is_blocked(id) {
         format!("  {DIM}blocked{DIM:#}")
     } else {
         String::new()
     };
+    let size = width.map_or(String::new(), |w| format!("{}  ", size(derived, id, w)));
     let _ = writeln!(
         out,
-        "{}{}  {}  {}  {}{blocked}",
+        "{}{}  {}  {}  {size}{}{blocked}",
         "  ".repeat(depth),
         t.slug,
         status(tasks, id),
@@ -132,22 +184,27 @@ fn write_tree(tasks: &Tasks, derived: &Derived, id: i64, depth: usize, out: &mut
         t.title()
     );
     for c in tasks.children(id) {
-        write_tree(tasks, derived, c.id, depth + 1, out);
+        write_tree(tasks, derived, c.id, depth + 1, width, out);
     }
 }
 
 /// `ergon ls`: one row per task ready to start.
 pub fn ls(tasks: &Tasks, derived: &Derived) -> String {
+    let ids = derived::ls(tasks, derived);
+    let width = derived
+        .sized()
+        .then(|| size_width(derived, ids.iter().copied()));
     let mut out = String::new();
-    for id in derived::ls(tasks, derived) {
+    for id in ids {
         let t = tasks.get(id);
         let context = match t.parent_id.map(|p| tasks.get(p)) {
             Some(p) if !p.is_root() => format!("  {DIM}(in: {}){DIM:#}", p.title()),
             _ => String::new(),
         };
+        let size = width.map_or(String::new(), |w| format!("{}  ", size(derived, id, w)));
         let _ = writeln!(
             out,
-            "{}  {}  {}  {}{context}",
+            "{}  {}  {}  {size}{}{context}",
             t.slug,
             priority(tasks, derived, id),
             status(tasks, id),

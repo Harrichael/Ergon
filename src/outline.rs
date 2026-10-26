@@ -1,21 +1,34 @@
-//! The outline: a project's tasks as editable text, one line per task, and
-//! applying an edited outline back to the project in one transaction.
+//! The outline: a project's tasks as an editable table, one row per task,
+//! and applying an edited outline back to the project in one transaction.
 //!
 //! ```text
 //! # ergon demo 1a2b3c4d
-//! qxpj [ ] Backend !p1
-//!   FTFE [~] Write the API deps:nHcx
-//!     pQyk Document it
-//! nHcx [x] Frontend
+//! root  in_progress  ~in_progress  -   -    -  ~8/13+  -     -         Root
+//! qxpj  todo         ~todo         p1  ~p1  -  ~8/13+  -     -         - Backend
+//! FTFE  -            ~todo         -   ~p1  5  ~5      -     -           - Write the API
+//! pQyk  todo         ~todo         -   -    -  -       FTFE  ~blocked  - Frontend
 //! ```
 //!
-//! A line is its indentation (it nests under the nearest less indented line
-//! above), the slug (absent on a new task), the status box (absent when the
-//! status follows the parent), the first line of the intent, then optional
-//! `!pN` and `deps:<slug>,<slug>` tokens. The header names the project and a
-//! version: a hash of the rest of the text as rendered. An outline edited
-//! while the project changed underneath it is refused, since applying it
-//! would undo those changes.
+//! A row is nine cells, then the title: slug, status, ~status, priority,
+//! ~priority, size, ~size, deps (comma-separated slugs) and ~blocked. `-` is an
+//! empty cell, so a row splits by position whatever it holds. Cells starting
+//! with `~` are calculated, and editing one is refused. A new task's slug is
+//! `-`, and its calculated cells are ignored.
+//!
+//! The title is the intent's first line. The root's comes first and bare;
+//! every other task's starts with `- `, indented two spaces per level of
+//! nesting under the root. A task nests under the nearest row above with a
+//! less indented title. Indentation counts from the end of the ~blocked
+//! column, which has a fixed width: a cell edited wider shifts its whole row,
+//! and its nesting with it, rather than re-nesting the task.
+//!
+//! Errors about a row start `line N, <cell>:` when one cell is at fault, the
+//! cell named by its column (`status`, `~size`, `title`, ...), so an editor
+//! can point at it.
+//!
+//! The header names the project and a version: a hash of the rest of the
+//! text as rendered. An outline edited while the project changed underneath
+//! it is refused, since applying it would undo those changes.
 
 use std::collections::{BTreeSet, HashMap, HashSet};
 
@@ -26,23 +39,23 @@ use serde::Serialize;
 use crate::derived::Derived;
 use crate::project::Project;
 use crate::slug;
-use crate::task::{Status, Tasks, parse_priority};
+use crate::task::{Status, Tasks, parse_priority, parse_size};
 
-const INDENT: &str = "  ";
+const BLOCKED: &str = "~blocked";
 
-const BOXES: [(char, Status); 5] = [
-    (' ', Status::Todo),
-    ('~', Status::InProgress),
-    ('>', Status::Landing),
-    ('x', Status::Done),
-    ('-', Status::Cancelled),
+/// Cells before the title: slug, status, ~status, priority, ~priority, size,
+/// ~size, deps, ~blocked.
+const CELLS: usize = 9;
+
+/// Which cells are calculated, with their names for errors.
+const CALCULATED: [(usize, &str, &str); 4] = [
+    (2, "~status", "status"),
+    (4, "~priority", "priority"),
+    (6, "~size", "size"),
+    (8, "~blocked", "deps"),
 ];
 
-fn box_char(status: Status) -> char {
-    BOXES.iter().find(|(_, s)| *s == status).unwrap().0
-}
-
-/// The intent's first line, uncapped: the part of the intent an outline line
+/// The intent's first line, uncapped: the part of the intent an outline row
 /// shows and edits.
 fn first_line(intent: &str) -> &str {
     intent.trim_start().lines().next().unwrap_or("").trim_end()
@@ -65,19 +78,59 @@ fn version(body: &str) -> String {
     format!("{:08x}", (h ^ (h >> 32)) as u32)
 }
 
+fn or_dash(s: Option<String>) -> String {
+    s.unwrap_or_else(|| "-".into())
+}
+
+/// A task's nine cells, as rendered.
+fn cells(tasks: &Tasks, derived: &Derived, id: i64) -> [String; CELLS] {
+    let t = tasks.get(id);
+    let deps: Vec<&str> = tasks
+        .dependencies(id)
+        .iter()
+        .map(|d| d.slug.as_str())
+        .collect();
+    [
+        t.slug.clone(),
+        or_dash(t.status.map(|s| s.to_string())),
+        format!("~{}", tasks.effective_status(id)),
+        or_dash(t.priority.map(|p| format!("p{p}"))),
+        or_dash(derived.priority(id).map(|p| format!("~p{p}"))),
+        or_dash(t.size.map(|n| n.to_string())),
+        or_dash(derived.size(id).map(|s| format!("~{}", s.label()))),
+        or_dash((!deps.is_empty()).then(|| deps.join(","))),
+        if derived.is_blocked(id) { BLOCKED } else { "-" }.to_string(),
+    ]
+}
+
 pub struct Rendered {
     pub text: String,
     pub version: String,
-    /// The task on each line after the header, in order.
+    /// The task on each row after the header, in order: the root first.
     pub ids: Vec<i64>,
 }
 
 pub fn render(tasks: &Tasks) -> Rendered {
-    let mut body = String::new();
-    let mut ids = Vec::new();
-    for c in tasks.children(tasks.root().id) {
-        write_line(tasks, c.id, 0, &mut body, &mut ids);
-    }
+    let derived = Derived::compute(tasks);
+    let root = tasks.root().id;
+    let ids: Vec<i64> = std::iter::once(root)
+        .chain(tasks.descendants(root))
+        .collect();
+    let rows: Vec<[String; CELLS]> = ids.iter().map(|&id| cells(tasks, &derived, id)).collect();
+
+    let laid: Vec<(Vec<&str>, usize, &str)> = rows
+        .iter()
+        .zip(&ids)
+        .map(|(row, &id)| {
+            let cells = row.iter().map(String::as_str).collect();
+            (
+                cells,
+                tasks.ancestors(id).len(),
+                first_line(&tasks.get(id).intent),
+            )
+        })
+        .collect();
+    let body = lay_out(&laid);
     let version = version(&body);
     Rendered {
         text: format!("# ergon {} {version}\n{body}", tasks.project.name),
@@ -86,31 +139,55 @@ pub fn render(tasks: &Tasks) -> Rendered {
     }
 }
 
-fn write_line(tasks: &Tasks, id: i64, depth: usize, out: &mut String, ids: &mut Vec<i64>) {
-    let t = tasks.get(id);
-    out.push_str(&INDENT.repeat(depth));
-    out.push_str(&t.slug);
-    if let Some(s) = t.status {
-        out.push_str(&format!(" [{}]", box_char(s)));
+/// Rows of cells, depth and title, with every column lined up.
+fn lay_out(rows: &[(Vec<&str>, usize, &str)]) -> String {
+    let mut widths = [0; CELLS];
+    for (cells, ..) in rows {
+        for (w, c) in widths.iter_mut().zip(cells) {
+            *w = (*w).max(c.chars().count());
+        }
     }
-    out.push(' ');
-    out.push_str(first_line(&t.intent));
-    if let Some(p) = t.priority {
-        out.push_str(&format!(" !p{p}"));
+    widths[CELLS - 1] = BLOCKED.len();
+    let mut out = String::new();
+    for (cells, depth, title) in rows {
+        for (c, w) in cells.iter().zip(widths) {
+            out.push_str(&format!("{c:<w$}  "));
+        }
+        if *depth > 0 {
+            out.push_str(&"  ".repeat(depth - 1));
+            out.push_str("- ");
+        }
+        out.push_str(title);
+        out.push('\n');
     }
-    let deps: Vec<&str> = tasks
-        .dependencies(id)
-        .iter()
-        .map(|d| d.slug.as_str())
-        .collect();
-    if !deps.is_empty() {
-        out.push_str(&format!(" deps:{}", deps.join(",")));
+    out
+}
+
+/// An edited outline lined up again, as written: nothing is checked against
+/// the project or applied. Titles are re-indented from the nesting they
+/// show, and blank lines are dropped.
+pub fn format(text: &str) -> Result<String> {
+    let header = text.lines().next().unwrap_or("");
+    let mut rows: Vec<(Vec<&str>, usize, &str)> = Vec::new();
+    let mut levels: Vec<usize> = Vec::new();
+    for (i, raw) in text.lines().enumerate().skip(1) {
+        if raw.trim().is_empty() {
+            continue;
+        }
+        let split = split_row(i + 1, raw)?;
+        let depth = if split.level == 0 {
+            levels.clear();
+            0
+        } else {
+            while levels.last().is_some_and(|&l| l >= split.level) {
+                levels.pop();
+            }
+            levels.push(split.level);
+            levels.len()
+        };
+        rows.push((split.cells, depth, split.title));
     }
-    out.push('\n');
-    ids.push(id);
-    for c in tasks.children(id) {
-        write_line(tasks, c.id, depth + 1, out, ids);
-    }
+    Ok(format!("{header}\n{}", lay_out(&rows)))
 }
 
 #[derive(Serialize)]
@@ -126,15 +203,10 @@ struct JsonTask<'a> {
     /// 1-based line number in `text`.
     line: usize,
     slug: &'a str,
-    /// Effective priority: stored, inferred or boosted.
-    priority: Option<u8>,
-    stored_priority: Option<u8>,
-    blocked: bool,
 }
 
-/// The outline as JSON, with what each line's task looks like after
-/// inference, for editors to annotate it with.
-pub fn json(tasks: &Tasks, derived: &Derived) -> String {
+/// The outline as JSON, with which task is on each row, for editors.
+pub fn json(tasks: &Tasks) -> String {
     let r = render(tasks);
     let json = Json {
         project: &tasks.project.name,
@@ -147,9 +219,6 @@ pub fn json(tasks: &Tasks, derived: &Derived) -> String {
             .map(|(i, &id)| JsonTask {
                 line: i + 2,
                 slug: &tasks.get(id).slug,
-                priority: derived.priority(id),
-                stored_priority: tasks.get(id).priority,
-                blocked: derived.is_blocked(id),
             })
             .collect(),
     };
@@ -169,85 +238,114 @@ pub fn header(text: &str) -> Result<(String, String)> {
 #[derive(Debug, PartialEq)]
 struct Line {
     no: usize,
-    indent: usize,
+    /// 0 for the root's bare title; otherwise one more than the spaces
+    /// before its `- `. Only the order matters.
+    level: usize,
+    /// `None` for a new task.
     slug: Option<String>,
     status: Option<Status>,
-    title: String,
     priority: Option<u8>,
+    size: Option<u32>,
     deps: Vec<String>,
+    /// The calculated cells as written, by cell index.
+    calculated: Vec<(usize, String)>,
+    title: String,
 }
 
-/// Parses one task line. `is_slug` says whether a leading word names a task;
-/// any other leading word is part of a new task's title.
-fn parse_line(no: usize, raw: &str, is_slug: impl Fn(&str) -> bool) -> Result<Line> {
-    let mut indent = 0;
-    for c in raw.chars() {
-        match c {
-            ' ' => indent += 1,
-            '\t' => indent += 8 - indent % 8,
-            _ => break,
-        }
+fn cell<T>(no: usize, name: &str, c: &str, parse: impl Fn(&str) -> Result<T>) -> Result<Option<T>> {
+    if c == "-" {
+        return Ok(None);
     }
-    let mut rest = raw.trim();
+    parse(c)
+        .map(Some)
+        .with_context(|| format!("line {no}, {name}"))
+}
 
-    let mut slug = None;
-    if let Some(word) = rest.split_whitespace().next().filter(|w| is_slug(w)) {
-        slug = Some(word.to_string());
-        rest = rest[word.len()..].trim_start();
-    }
+/// A row split into its nine cells, its title, and the title's level: 0 for
+/// a bare title (the root's), otherwise one more than its indentation.
+struct Split<'a> {
+    cells: Vec<&'a str>,
+    level: usize,
+    title: &'a str,
+}
 
-    let mut status = None;
-    let mut chars = rest.chars();
-    if let (Some('['), Some(c), Some(']')) = (chars.next(), chars.next(), chars.next()) {
-        let c = c.to_ascii_lowercase();
-        if let Some((_, s)) = BOXES.iter().find(|(b, _)| *b == c) {
-            status = Some(*s);
-            rest = rest[1 + c.len_utf8() + 1..].trim_start();
-        }
-    } else if let Some(r) = rest.strip_prefix("[]") {
-        status = Some(Status::Todo);
-        rest = r.trim_start();
+fn split_row(no: usize, raw: &str) -> Result<Split<'_>> {
+    let mut cells: Vec<&str> = Vec::with_capacity(CELLS);
+    let mut rest = raw;
+    for _ in 0..CELLS {
+        let trimmed = rest.trim_start();
+        let Some(end) = trimmed.find(char::is_whitespace) else {
+            bail!("line {no}: expected {CELLS} cells, then the title; use - for an empty cell");
+        };
+        cells.push(&trimmed[..end]);
+        rest = &trimmed[end..];
     }
 
-    let mut priority = None;
-    let mut deps = None;
-    while let Some((head, word)) = rest.rsplit_once(char::is_whitespace) {
-        if let (None, Some(p)) = (priority, word.strip_prefix('!')) {
-            match parse_priority(p) {
-                Ok(p) => priority = Some(p),
-                Err(_) => break,
-            }
-        } else if let (None, Some(list)) = (&deps, word.strip_prefix("deps:")) {
+    let gap = rest.len() - rest.trim_start().len();
+    let base = 2 + BLOCKED.len() - cells[CELLS - 1].len().min(BLOCKED.len());
+    let title = rest.trim();
+    let marked = title == "-" || title.starts_with("- ");
+    let (level, title) = if marked {
+        let Some(indent) = gap.checked_sub(base) else {
+            bail!("line {no}, title: it starts inside the ~blocked column");
+        };
+        (indent + 1, title[1..].trim_start())
+    } else {
+        (0, title)
+    };
+    if title.is_empty() {
+        bail!("line {no}, title: missing");
+    }
+    Ok(Split {
+        cells,
+        level,
+        title,
+    })
+}
+
+/// Parses one row: nine cells split on whitespace, then the title.
+fn parse_line(no: usize, raw: &str) -> Result<Line> {
+    let Split {
+        cells,
+        level,
+        title,
+    } = split_row(no, raw)?;
+    let slug = match cells[0] {
+        "-" => None,
+        s if s == slug::ROOT || slug::is_valid(s) => Some(s.to_string()),
+        s => bail!("line {no}, slug: invalid slug {s:?}; use - for a new task"),
+    };
+    let deps = match cells[7] {
+        "-" => Vec::new(),
+        list => {
             let list: Vec<String> = list
                 .split(',')
                 .filter(|s| !s.is_empty())
                 .map(String::from)
                 .collect();
             if let Some(bad) = list.iter().find(|s| !slug::is_valid(s)) {
-                bail!("line {no}: invalid slug {bad:?} in deps");
+                bail!("line {no}, deps: invalid slug {bad:?}");
             }
-            deps = Some(list);
-        } else {
-            break;
+            list
         }
-        rest = head.trim_end();
-    }
-
-    if rest.is_empty() {
-        bail!("line {no}: missing a title");
-    }
+    };
     Ok(Line {
         no,
-        indent,
+        level,
         slug,
-        status,
-        title: rest.to_string(),
-        priority,
-        deps: deps.unwrap_or_default(),
+        status: cell(no, "status", cells[1], Status::parse)?,
+        priority: cell(no, "priority", cells[3], parse_priority)?,
+        size: cell(no, "size", cells[5], parse_size)?,
+        deps,
+        calculated: CALCULATED
+            .iter()
+            .map(|&(i, ..)| (i, cells[i].to_string()))
+            .collect(),
+        title: title.to_string(),
     })
 }
 
-/// One outline line, resolved against the project.
+/// One outline row, resolved against the project.
 struct Node {
     line: Line,
     /// The existing task, or `None` for a new one.
@@ -275,8 +373,12 @@ pub fn apply(
             project.name
         );
     }
-    let nodes = resolve(&tasks, text)?;
+    let (root, nodes) = resolve(&tasks, text)?;
     let mut out = Vec::new();
+    let now = crate::now();
+    let r = tasks.root();
+    let label = format!("{} {}", r.slug, first_line(&r.intent));
+    edit_fields(&tx, r, &root, root.status, now, &label, &mut out)?;
     let ids = apply_nodes(&tx, &tasks, &nodes, &mut out)?;
     describe_reorders(&tasks, &nodes, &ids, &mut out);
     cascade_cancel(&tx, &tasks, &nodes, &ids, &mut out)?;
@@ -288,8 +390,10 @@ pub fn apply(
     Ok(out)
 }
 
-fn resolve(tasks: &Tasks, text: &str) -> Result<Vec<Node>> {
-    let is_slug = |w: &str| w != slug::ROOT && slug::is_valid(w) && tasks.find(w).is_ok();
+/// The root's row, and a node for every other row.
+fn resolve(tasks: &Tasks, text: &str) -> Result<(Line, Vec<Node>)> {
+    let derived = Derived::compute(tasks);
+    let mut root: Option<Line> = None;
     let mut nodes: Vec<Node> = Vec::new();
     let mut seen: HashMap<i64, usize> = HashMap::new();
     let mut stack: Vec<usize> = Vec::new();
@@ -297,38 +401,71 @@ fn resolve(tasks: &Tasks, text: &str) -> Result<Vec<Node>> {
         if raw.trim().is_empty() {
             continue;
         }
-        let line = parse_line(i + 1, raw, is_slug)?;
+        let line = parse_line(i + 1, raw)?;
         let no = line.no;
 
         let id = match &line.slug {
             None => None,
             Some(s) => {
-                let t = tasks.find(s)?;
+                let t = tasks.find(s).with_context(|| format!("line {no}, slug"))?;
                 if t.is_deleted() {
-                    bail!("line {no}: {s} is deleted; restore it with `ergon restore {s}` first");
+                    bail!(
+                        "line {no}, slug: {s} is deleted; restore it with `ergon restore {s}` first"
+                    );
                 }
                 if let Some(other) = seen.insert(t.id, no) {
-                    bail!("line {no}: {s} is already on line {other}");
+                    bail!("line {no}, slug: {s} is already on line {other}");
                 }
                 Some(t.id)
             }
         };
+        if let Some(id) = id {
+            let rendered = cells(tasks, &derived, id);
+            for (i, written) in &line.calculated {
+                if *written != rendered[*i] {
+                    let (_, name, stored) = CALCULATED.iter().find(|c| c.0 == *i).unwrap();
+                    bail!(
+                        "line {no}, {name}: it's calculated, so {written} can't be edited; \
+                         change the {stored} cell instead"
+                    );
+                }
+            }
+        }
+
+        let is_root = id == Some(tasks.root().id);
+        match (is_root, root.is_some(), line.level) {
+            (true, _, 0) => {
+                if !line.deps.is_empty() {
+                    bail!("line {no}, deps: the root task can't have dependencies");
+                }
+                root = Some(line);
+                continue;
+            }
+            (true, ..) => {
+                bail!("line {no}, title: the root's title has no `- `, since nothing is above it")
+            }
+            (false, false, _) => bail!("line {no}: the first row must be the root's"),
+            (false, true, 0) => {
+                bail!("line {no}, title: it must start with `- `, since the task is under the root")
+            }
+            (false, true, _) => {}
+        }
 
         let mut deps = BTreeSet::new();
         for d in &line.deps {
             let t = match tasks.find(d) {
                 Ok(t) if !t.is_root() => t,
-                _ => bail!("line {no}: no task {d} to depend on"),
+                _ => bail!("line {no}, deps: no task {d} to depend on"),
             };
             if t.is_deleted() {
-                bail!("line {no}: can't depend on {d}, which is deleted");
+                bail!("line {no}, deps: can't depend on {d}, which is deleted");
             }
             deps.insert(t.id);
         }
 
         while stack
             .last()
-            .is_some_and(|&p| nodes[p].line.indent >= line.indent)
+            .is_some_and(|&p| nodes[p].line.level >= line.level)
         {
             stack.pop();
         }
@@ -340,7 +477,8 @@ fn resolve(tasks: &Tasks, text: &str) -> Result<Vec<Node>> {
             deps,
         });
     }
-    Ok(nodes)
+    let root = root.context("the outline has no rows; the first must be the root's")?;
+    Ok((root, nodes))
 }
 
 fn status_label(s: Option<Status>) -> String {
@@ -349,6 +487,57 @@ fn status_label(s: Option<Status>) -> String {
 
 fn priority_label(p: Option<u8>) -> String {
     p.map_or("unset".into(), |p| format!("p{p}"))
+}
+
+fn size_label(n: Option<u32>) -> String {
+    n.map_or("unset".into(), |n| n.to_string())
+}
+
+/// Applies a row's title, status, priority and size to an existing task,
+/// describing each change under `label`.
+fn edit_fields(
+    conn: &Connection,
+    t: &crate::task::Task,
+    line: &Line,
+    status: Option<Status>,
+    now: i64,
+    label: &str,
+    out: &mut Vec<String>,
+) -> Result<()> {
+    let mut intent = t.intent.clone();
+    if line.title != first_line(&t.intent) {
+        intent = replace_first_line(&t.intent, &line.title);
+        out.push(format!("{label}: title -> {}", line.title));
+    }
+    if status != t.status {
+        out.push(format!(
+            "{label}: status {} -> {}",
+            status_label(t.status),
+            status_label(status)
+        ));
+    }
+    if line.priority != t.priority {
+        out.push(format!(
+            "{label}: priority {} -> {}",
+            priority_label(t.priority),
+            priority_label(line.priority)
+        ));
+    }
+    if line.size != t.size {
+        out.push(format!(
+            "{label}: size {} -> {}",
+            size_label(t.size),
+            size_label(line.size)
+        ));
+    }
+    if (&intent, status, line.priority, line.size) != (&t.intent, t.status, t.priority, t.size) {
+        conn.execute(
+            "UPDATE tasks SET intent = ?1, status = ?2, priority = ?3, size = ?4,
+             updated_at = ?5 WHERE id = ?6",
+            params![intent, status, line.priority, line.size, now, t.id],
+        )?;
+    }
+    Ok(())
 }
 
 /// Adds and edits every node in order, parents first, returning the task id
@@ -382,7 +571,7 @@ fn apply_nodes(
             Some(p) => format!("under {}", names[p]),
             None => "at the top level".to_string(),
         };
-        // Top-level tasks must have a status, so a missing box there is todo.
+        // Top-level tasks must have a status, so an empty one there is todo.
         let status = line.status.or(n.parent.is_none().then_some(Status::Todo));
 
         // `name` refers to the task as a parent; `label` heads its changes.
@@ -394,9 +583,9 @@ fn apply_nodes(
                     .context("couldn't find an unused slug")?;
                 new_slugs.insert(slug.clone());
                 conn.execute(
-                    "INSERT INTO tasks (project_id, slug, parent_id, intent, status, priority, created_at, updated_at, position)
-                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?7, ?8)",
-                    params![tasks.project.id, slug, parent, line.title, status, line.priority, now, positions[i]],
+                    "INSERT INTO tasks (project_id, slug, parent_id, intent, status, priority, size, created_at, updated_at, position)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?8, ?9)",
+                    params![tasks.project.id, slug, parent, line.title, status, line.priority, line.size, now, positions[i]],
                 )?;
                 let name = format!("\"{}\"", line.title);
                 out.push(format!("add {name} {place}"));
@@ -423,32 +612,7 @@ fn apply_nodes(
                         params![positions[i], id],
                     )?;
                 }
-                let mut intent = t.intent.clone();
-                if line.title != first_line(&t.intent) {
-                    intent = replace_first_line(&t.intent, &line.title);
-                    out.push(format!("{label}: title -> {}", line.title));
-                }
-                if status != t.status {
-                    out.push(format!(
-                        "{label}: status {} -> {}",
-                        status_label(t.status),
-                        status_label(status)
-                    ));
-                }
-                if line.priority != t.priority {
-                    out.push(format!(
-                        "{label}: priority {} -> {}",
-                        priority_label(t.priority),
-                        priority_label(line.priority)
-                    ));
-                }
-                if (&intent, status, line.priority) != (&t.intent, t.status, t.priority) {
-                    conn.execute(
-                        "UPDATE tasks SET intent = ?1, status = ?2, priority = ?3, updated_at = ?4
-                         WHERE id = ?5",
-                        params![intent, status, line.priority, now, id],
-                    )?;
-                }
+                edit_fields(conn, t, line, status, now, &label, out)?;
                 (id, name, label)
             }
         };
@@ -638,32 +802,47 @@ mod tests {
     use super::*;
 
     fn parse(raw: &str) -> Line {
-        parse_line(2, raw, |w| w == "qxpj").unwrap()
+        parse_line(2, raw).unwrap()
     }
 
+    /// Cells split by position, so an empty cell is `-` and a title may
+    /// hold anything. Nesting counts from the end of the fixed-width
+    /// ~blocked column, so a widened cell to its left doesn't re-nest.
     #[test]
-    fn parses_lines() {
-        let l = parse("    qxpj [~] Write the API !p1 deps:FTFE,nHcx");
-        assert_eq!(l.indent, 4);
-        assert_eq!(l.slug.as_deref(), Some("qxpj"));
+    fn parses_rows() {
+        let l = parse(
+            "FTFE  in_progress  ~in_progress  p1  ~p1  5  ~5  FTFE,nHcx  -           - 3 bugs ~p1 - left",
+        );
+        assert_eq!(l.slug.as_deref(), Some("FTFE"));
         assert_eq!(l.status, Some(Status::InProgress));
-        assert_eq!(l.title, "Write the API");
-        assert_eq!(l.priority, Some(1));
+        assert_eq!((l.priority, l.size), (Some(1), Some(5)));
         assert_eq!(l.deps, ["FTFE", "nHcx"]);
+        assert_eq!(l.title, "3 bugs ~p1 - left");
+        assert_eq!(l.level, 3);
 
-        // A new task: no slug, a box, tokens in either order.
-        let l = parse("\t[] Make tests pass deps: !P0");
-        assert_eq!((l.indent, l.slug, l.status), (8, None, Some(Status::Todo)));
-        assert_eq!((l.title.as_str(), l.priority), ("Make tests pass", Some(0)));
-        assert!(l.deps.is_empty());
+        let widened = parse(
+            "FTFE  in_progress  ~in_progress  p1  ~p1  5  ~5  FTFE,nHcx,pQyk  -           - Title",
+        );
+        assert_eq!(widened.level, 3);
+        let blocked = parse("FTFE  -  ~todo  -  -  -  -  -  ~blocked    - Title");
+        assert_eq!(blocked.level, 3);
+        assert_eq!(blocked.status, None);
 
-        // Things that only look like a box or tokens stay in the title.
-        let l = parse("qxpj [WIP] use !p9");
-        assert_eq!(l.status, None);
-        assert_eq!(l.title, "[WIP] use !p9");
+        let root = parse("root  in_progress  ~in_progress  -  -  -  -  -  -         Root");
+        assert_eq!((root.level, root.title.as_str()), (0, "Root"));
+        let new = parse("-  todo  -  -  -  -  -  -  -         - Write tests");
+        assert_eq!((new.slug, new.level), (None, 1));
 
-        assert!(parse_line(3, "qxpj [x]", |w| w == "qxpj").is_err());
-        assert!(parse_line(3, "Do it deps:oops", |_| false).is_err());
+        for bad in [
+            "FTFE  todo  ~todo  -  -  -  -  -  -  - Title",
+            "FTFE  todo  ~todo  -  -  4  -  -  -         - Title",
+            "FTFE  todo  ~todo  p9  -  -  -  -  -         - Title",
+            "FTFE  open  ~todo  -  -  -  -  -  -         - Title",
+            "FTFE  todo  ~todo  -  -  -  -  oops!  -         - Title",
+            "FTFE  todo  ~todo  -  -  -  -  -  -         - ",
+        ] {
+            assert!(parse_line(3, bad).is_err(), "{bad}");
+        }
     }
 
     #[test]

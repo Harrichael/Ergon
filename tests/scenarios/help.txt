@@ -26,14 +26,14 @@ Commands:
   init     Create a project and its root task, write .ergon here, and launch the planner session
   project  Manage projects
   add      Create a task and print its slug
-  edit     Change a task's intent, status or priority
+  edit     Change a task's intent, status, priority or size
   rm       Delete a task and its subtree. The counts must match `show`
   restore  Undo a deletion
   mv       Move a task, with its subtree, under a new parent
   show     Show one task in full
   tree     Show the task tree (default: from the root)
   ls       List the coarsest open, unblocked work, most urgent first
-  outline  Print the project as an editable outline, or apply an edited one
+  outline  Print the project as an editable table, or apply an edited one
   dep      Manage dependencies
   export   Print projects in full as JSON, for backups or another database
   import   Add the projects in an export (a file, or stdin) to this database

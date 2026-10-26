@@ -173,6 +173,9 @@ impl Sandbox {
         let tmp = tempfile::tempdir().unwrap();
         let root = tmp.path().join("root");
         std::fs::create_dir(&root).unwrap();
+        // ergon prints the directory it runs in, which has symlinks resolved
+        // (on macOS the temp dir is under /var, a link to /private/var).
+        let root = root.canonicalize().unwrap();
         let claude = tmp.path().join("fake-claude");
         std::fs::write(&claude, FAKE_CLAUDE).unwrap();
         use std::os::unix::fs::PermissionsExt;

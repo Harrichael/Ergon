@@ -1,14 +1,39 @@
-//! Values computed from a project snapshot: blocked, effective priority, and
-//! the `ls` selection.
+//! Values computed from a project snapshot: blocked, effective priority,
+//! sizes, and the `ls` selection.
 
 use std::collections::{HashMap, HashSet, VecDeque};
 
-use crate::task::Tasks;
+use crate::task::{Status, Tasks};
 
-/// Blocked state and effective priority of every live task.
+/// Blocked state, effective priority and size of every live task.
 pub struct Derived {
     blocked: HashSet<i64>,
     priority: HashMap<i64, Option<u8>>,
+    size: HashMap<i64, Size>,
+}
+
+/// A task's size: its own, or the sum of the sized tasks under it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize)]
+pub struct Size {
+    /// What isn't done or landing yet.
+    pub left: u64,
+    pub total: u64,
+    /// Some work under it has no size, so the sums are a floor.
+    pub partial: bool,
+    /// The task's own size, not a sum.
+    pub stored: bool,
+}
+
+impl Size {
+    /// `5`, or `8/13` once some is done, and `+` when partial.
+    pub fn label(&self) -> String {
+        let n = if self.left == self.total {
+            self.total.to_string()
+        } else {
+            format!("{}/{}", self.left, self.total)
+        };
+        if self.partial { n + "+" } else { n }
+    }
 }
 
 impl Derived {
@@ -40,7 +65,14 @@ impl Derived {
             })
             .collect();
 
-        Derived { blocked, priority }
+        let mut size = HashMap::new();
+        compute_size(tasks, root, &mut size);
+
+        Derived {
+            blocked,
+            priority,
+            size,
+        }
     }
 
     pub fn is_blocked(&self, id: i64) -> bool {
@@ -50,6 +82,60 @@ impl Derived {
     pub fn priority(&self, id: i64) -> Option<u8> {
         self.priority.get(&id).copied().flatten()
     }
+
+    /// `None` for a task with no size and nothing sized under it, and for
+    /// the steps of a sized task.
+    pub fn size(&self, id: i64) -> Option<Size> {
+        self.size.get(&id).copied()
+    }
+
+    /// Whether any task has a size, which is when views show them.
+    pub fn sized(&self) -> bool {
+        !self.size.is_empty()
+    }
+}
+
+/// A sized task counts its own size and nothing under it. An unsized one adds
+/// up its children; a child with nothing sized at all is unsized work, which
+/// makes the sums partial. Cancelled work counts for nothing.
+fn compute_size(tasks: &Tasks, id: i64, out: &mut HashMap<i64, Size>) -> Option<Size> {
+    let status = tasks.effective_status(id);
+    if let Some(n) = tasks.get(id).size {
+        let size = Size {
+            left: if status.is_open() { n as u64 } else { 0 },
+            total: n as u64,
+            partial: false,
+            stored: true,
+        };
+        out.insert(id, size);
+        return Some(size);
+    }
+    let mut sum: Option<Size> = None;
+    let mut gap = false;
+    for c in tasks.children(id) {
+        let child = compute_size(tasks, c.id, out);
+        if tasks.effective_status(c.id) == Status::Cancelled {
+            continue;
+        }
+        match child {
+            None => gap = true,
+            Some(c) => {
+                let s = sum.get_or_insert(Size {
+                    left: 0,
+                    total: 0,
+                    partial: false,
+                    stored: false,
+                });
+                s.left += c.left;
+                s.total += c.total;
+                s.partial |= c.partial;
+            }
+        }
+    }
+    let mut sum = sum?;
+    sum.partial |= gap;
+    out.insert(id, sum);
+    Some(sum)
 }
 
 fn mark_blocked(tasks: &Tasks, id: i64, inherited: bool, out: &mut HashSet<i64>) {
@@ -218,8 +304,36 @@ mod tests {
                 "Task",
                 None,
                 priority,
+                None,
             )
             .unwrap()
+        }
+
+        fn sized(&mut self, parent: Option<&str>, size: u32) -> String {
+            ops::add(
+                &mut self.conn,
+                &self.project,
+                parent,
+                "Task",
+                None,
+                None,
+                Some(size),
+            )
+            .unwrap()
+        }
+
+        /// `left/total`, with `+` when partial and `*` when stored.
+        fn size(&self, slug: &str) -> Option<String> {
+            let (tasks, d) = self.eval();
+            d.size(tasks.live(slug).unwrap().id).map(|s| {
+                format!(
+                    "{}/{}{}{}",
+                    s.left,
+                    s.total,
+                    if s.partial { "+" } else { "" },
+                    if s.stored { "*" } else { "" }
+                )
+            })
         }
 
         fn dep(&mut self, t: &str, d: &str) {
@@ -307,6 +421,32 @@ mod tests {
 
         f.status(&x, Status::Cancelled);
         assert!(!f.blocked(&a), "cancelled dependencies are satisfied");
+    }
+
+    /// A sized task is one unit of work: its steps carry nothing. Anything
+    /// above sums the units under it, tells left from total once some are
+    /// done, drops cancelled ones, and flags unsized work as a floor.
+    #[test]
+    fn sizes_add_up_from_the_units_of_work() {
+        let mut f = Fixture::new();
+        let epic = f.add(None, None);
+        let api = f.sized(Some(&epic), 5);
+        let step = f.add(Some(&api), None);
+        let ui = f.sized(Some(&epic), 8);
+        let docs = f.add(Some(&epic), None);
+        assert_eq!(f.size(&api).as_deref(), Some("5/5*"));
+        assert_eq!(f.size(&step), None, "a step of a unit");
+        assert_eq!(f.size(&epic).as_deref(), Some("13/13+"), "docs has no size");
+
+        f.status(&api, Status::Done);
+        f.status(&docs, Status::Cancelled);
+        assert_eq!(f.size(&epic).as_deref(), Some("8/13"));
+        f.status(&ui, Status::Landing);
+        assert_eq!(f.size(&epic).as_deref(), Some("0/13"));
+        assert_eq!(
+            f.size(&f.eval().0.root().slug.clone()).as_deref(),
+            Some("0/13")
+        );
     }
 
     #[test]

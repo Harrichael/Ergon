@@ -99,7 +99,7 @@ $ ergon add x --parent AAAA
 error: no task demo/AAAA
 [exit 1]
 $ ergon edit qxpj
-error: nothing to change: pass --intent, --status or --priority
+error: nothing to change: pass --intent, --status, --priority or --size
 [exit 1]
 $ ergon edit qxpj --priority p5
 error: invalid value 'p5' for '--priority <PRIORITY>': invalid priority "p5": expected p0, p1, p2, p3 or p4
