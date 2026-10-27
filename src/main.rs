@@ -487,6 +487,9 @@ fn run(cli: Cli) -> Result<()> {
         Command::Show { task, intent, .. } => {
             let task = task.expect("clap requires a task without --pr");
             let p = project_for(&conn, &[&task])?;
+            if !intent {
+                finish_merged(&mut conn, &p, &cwd)?;
+            }
             let tasks = Tasks::load(&conn, &p)?;
             let id = tasks.live(&task.slug)?.id;
             if intent {
@@ -539,7 +542,9 @@ fn run(cli: Cli) -> Result<()> {
                 .collect(),
                 statuses: status.map(|s| s.0),
             };
-            let tasks = Tasks::load(&conn, &project_for(&conn, &[])?)?;
+            let p = project_for(&conn, &[])?;
+            finish_merged(&mut conn, &p, &cwd)?;
+            let tasks = Tasks::load(&conn, &p)?;
             print!(
                 "{}",
                 view::ls(
@@ -658,6 +663,25 @@ fn run(cli: Cli) -> Result<()> {
         Command::Dep(DepCommand::Rm { task, depends_on }) => {
             let p = project_for(&conn, &[&task, &depends_on])?;
             ops::dep_rm(&mut conn, &p, &task.slug, &depends_on.slug)?;
+        }
+    }
+    Ok(())
+}
+
+/// Marks done each landing task whose landings have all merged. Only ever
+/// from landing: one session's sets can carry tasks that have more to land.
+fn finish_merged(conn: &mut Connection, p: &Project, cwd: &std::path::Path) -> Result<()> {
+    let tasks = Tasks::load(conn, p)?;
+    for id in landings::merged(&tasks, cwd) {
+        let r = tasks.reference(id);
+        let done = Changes {
+            status: Some(Some(Status::Done)),
+            ..Default::default()
+        };
+        // A side effect of reading, so it never stops the read.
+        match ops::edit(conn, p, &tasks.get(id).slug, done) {
+            Ok(_) => eprintln!("{r} done: its landings merged"),
+            Err(e) => eprintln!("couldn't mark {r} done: {e:#}"),
         }
     }
     Ok(())

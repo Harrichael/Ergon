@@ -128,6 +128,14 @@ goes wrong.
 
 **Open** means `todo` or `in_progress`. **Closed** means `done` or `cancelled`.
 
+`ergon ls` and `ergon show` turn a `landing` task `done` once choros reports
+every landing set that carries it, or a task under it, as merged, and at
+least one does; the `landing` tasks under it go `done` with it. Nothing else
+moves a status on its own: a session's sets can carry tasks with more to
+land, so only a task already in `landing` is said to be finished. `tree`
+and the pickers don't check, so they can show a task as `landing` until the
+next `ls` or `show`.
+
 A task's stored status may be NULL. Its **effective status** is its own status
 if set, otherwise its nearest ancestor's. The root's status can't be NULL; it
 starts as `in_progress`. Top-level tasks (direct children of the root) always

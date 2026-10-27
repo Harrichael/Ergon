@@ -1,0 +1,108 @@
+# A landing task becomes done once every set that carries it, or a task
+# under it, has merged; ls and show check as they read. Only landing tasks
+# move: a session's sets can carry tasks that still have work to land.
+
+$ cd ws
+$ ergon init demo "Build a demo" --no-launch
+Created project demo in $ROOT/ws
+$ ergon add Payments
+qxpj
+$ ergon add API --parent qxpj
+FTFE
+$ ergon add Docs --parent qxpj
+nHcx
+$ ergon add Search
+pQyk
+$ ergon add Billing
+9cDQ
+$ ergon add Export
+dFR6
+$ ergon add Import
+qwpT
+$ ergon attach qxpj --session 0b5e0b5e-0000-4000-8000-000000000001
+attached session 0b5e0b5e-0000-4000-8000-000000000001 to demo/qxpj; `ergon prompt demo/qxpj` prints its instructions
+$ ergon edit FTFE --status landing
+$ ergon edit qxpj --status landing
+$ ergon edit pQyk --status in_progress
+$ ergon edit 9cDQ --status landing
+$ ergon edit dFR6 --status landing
+$ ergon edit qwpT --status landing
+
+# Without choros nothing is known to have merged.
+$ ergon ls
+pQyk  p-  in_progress  Search
+
+$ fake-choros <<EOF
+{
+  "queues": [
+    {
+      "name": "appq",
+      "sets": [
+        {"n": 1, "repo": "app", "state": "merged", "pr": {"number": 112, "url": "u"},
+         "sessions": [], "labels": ["demo/FTFE"]},
+        {"n": 2, "repo": "app", "state": "merged", "pr": {"number": 113, "url": "u"},
+         "sessions": [], "labels": ["demo/pQyk"]},
+        {"n": 3, "repo": "app", "state": "merged", "pr": {"number": 114, "url": "u"},
+         "sessions": [], "labels": ["demo/9cDQ"]},
+        {"n": 4, "repo": "app", "state": "front", "pr": {"number": 115, "url": "u"},
+         "sessions": [], "labels": ["demo/9cDQ"]},
+        {"n": 5, "repo": "app", "state": "closed", "pr": {"number": 116, "url": "u"},
+         "sessions": [], "labels": ["demo/dFR6"]}
+      ]
+    }
+  ]
+}
+EOF
+
+# The API's set merged, so the API is done, and so is Payments, whose only
+# landing it was. Docs has no set of its own, but Payments being landing
+# says its work is in PRs, so it goes done with its parent. Search merged too, but it's still in progress. Billing has
+# a set still open, Export's closed one never merged, and no set carries
+# Import.
+$ ergon ls
+pQyk  p-  in_progress  Search
+demo/FTFE done: its landings merged
+demo/qxpj done: its landings merged
+
+$ ergon tree
+root  in_progress  p-  Build a demo
+  qxpj  done         p-  Payments
+    FTFE  done         p-  API
+    nHcx  done         p-  Docs
+  pQyk  in_progress  p-  Search
+  9cDQ  landing      p-  Billing
+  dFR6  landing      p-  Export
+  qwpT  landing      p-  Import
+
+# Once Billing's last set merges, show finds it.
+$ fake-choros <<EOF
+{
+  "queues": [
+    {
+      "name": "appq",
+      "sets": [
+        {"n": 3, "repo": "app", "state": "merged", "pr": {"number": 114, "url": "u"},
+         "sessions": [], "labels": ["demo/9cDQ"]},
+        {"n": 4, "repo": "app", "state": "merged", "pr": {"number": 115, "url": "u"},
+         "sessions": [], "labels": ["demo/9cDQ"]}
+      ]
+    }
+  ]
+}
+EOF
+$ ergon show 9cDQ
+demo/9cDQ  Billing
+status:    done
+priority:  p-
+blocked:   no
+parent:    demo/root  Build a demo
+created:   2025-10-09 08:53 (just now)
+updated:   2025-10-09 08:53 (just now)
+delete:    ergon rm demo/9cDQ --subtasks 0 --dependents 0
+
+Billing
+
+Landings:
+  - appq  landing-3  merged  app #114
+  - appq  landing-4  merged  app #115
+demo/9cDQ done: its landings merged

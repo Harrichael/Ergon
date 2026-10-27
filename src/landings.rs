@@ -5,6 +5,7 @@
 //! Labels win outright, since one session can take on many tasks and land
 //! them in separate sets.
 
+use std::collections::{BTreeSet, HashMap};
 use std::path::Path;
 use std::process::Command;
 
@@ -12,7 +13,7 @@ use anyhow::{Context, Result, bail};
 use serde::Deserialize;
 
 use crate::refs::TaskRef;
-use crate::task::Tasks;
+use crate::task::{self, Tasks};
 
 /// The part of `choros status --json` ergon reads.
 #[derive(Deserialize)]
@@ -174,4 +175,59 @@ pub fn tasks_of<'a>(landing: &Landing, projects: &'a [Tasks]) -> Vec<(&'a Tasks,
                 .map(move |t| (tasks, t.id))
         })
         .collect()
+}
+
+/// The landing tasks whose landings have all merged, with the landing tasks
+/// under them, deepest first so no task is done before its subtasks. A
+/// task's landings are the sets that carry it or a task under it, read from
+/// the session folders of that subtree (`fallback` for tasks without one).
+/// A task no set carries stays landing: nothing says its work went anywhere.
+pub fn merged(tasks: &Tasks, fallback: &Path) -> Vec<i64> {
+    let landing: Vec<i64> = tasks
+        .all()
+        .into_iter()
+        .filter(|t| !t.is_deleted() && t.status == Some(task::Status::Landing))
+        .map(|t| t.id)
+        .collect();
+    let subtree =
+        |id: i64| -> Vec<i64> { std::iter::once(id).chain(tasks.descendants(id)).collect() };
+    let dirs_of = |ids: &[i64]| -> BTreeSet<&Path> {
+        ids.iter()
+            .map(|&t| dir_for(tasks, t).unwrap_or(fallback))
+            .collect()
+    };
+
+    // Unreadable folders, like ones outside any trunk, judge nothing.
+    let mut read_in: HashMap<&Path, Option<Vec<Landing>>> = HashMap::new();
+    for &id in &landing {
+        for d in dirs_of(&subtree(id)) {
+            read_in.entry(d).or_insert_with(|| read(d).ok().flatten());
+        }
+    }
+
+    let mut done = BTreeSet::new();
+    for &id in &landing {
+        let ids = subtree(id);
+        let Some(sets) = dirs_of(&ids)
+            .into_iter()
+            .map(|d| read_in[d].as_ref())
+            .collect::<Option<Vec<_>>>()
+        else {
+            continue;
+        };
+        let carrying: Vec<&Landing> = sets
+            .into_iter()
+            .flatten()
+            .filter(|l| ids.iter().any(|&t| l.carries(tasks, t)))
+            .collect();
+        if !carrying.is_empty() && carrying.iter().all(|l| l.state == "merged") {
+            done.extend(
+                ids.into_iter()
+                    .filter(|&t| tasks.get(t).status == Some(task::Status::Landing)),
+            );
+        }
+    }
+    let mut done: Vec<i64> = done.into_iter().collect();
+    done.sort_by_key(|&t| std::cmp::Reverse(tasks.ancestors(t).len()));
+    done
 }
