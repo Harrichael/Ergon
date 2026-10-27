@@ -131,3 +131,34 @@ error: can't sort by "title": expected priority, attention, size, created or upd
 $ ergon ls --sort size up
 error: invalid sort order "up": expected asc or desc
 [exit 1]
+
+# --priority, --attention and --size keep the rows whose value is in a range,
+# both ends included; none keeps those without one. Flags combine.
+$ ergon ls --attention ..5
+FTFE  p1  todo         8  a2   Big
+$ ergon ls --attention 7..
+qxpj  p2  todo         2  a7   Small
+$ ergon ls --attention none
+nHcx  p0  todo         -  a?   Unrated
+$ ergon ls --priority p0..p1
+nHcx  p0  todo         -  a?   Unrated
+FTFE  p1  todo         8  a2   Big
+$ ergon ls --size 3..
+FTFE  p1  todo         8  a2   Big
+$ ergon ls --priority ..p1 --attention 2
+FTFE  p1  todo         8  a2   Big
+$ ergon ls --attention 3..1
+error: invalid value '3..1' for '--attention <RANGE>': invalid range "3..1": it starts after it ends
+
+For more information, try '--help'.
+[exit 2]
+$ ergon ls --attention ..
+error: invalid value '..' for '--attention <RANGE>': invalid range "..": give at least one end, as in 2..5, ..3 or 7..
+
+For more information, try '--help'.
+[exit 2]
+$ ergon ls --priority p9..
+error: invalid value 'p9..' for '--priority <RANGE>': invalid priority "p9": expected p0, p1, p2, p3 or p4
+
+For more information, try '--help'.
+[exit 2]

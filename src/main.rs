@@ -8,7 +8,7 @@ use ergon::project::{self, Project};
 use ergon::refs::{self, TaskRef, TaskRefs};
 use ergon::task::{self, Status, Tasks};
 
-use ergon::derived::Derived;
+use ergon::derived::{Derived, Filter, Range, SortField};
 use ergon::{claude, db, export, fmt, outline, picker, view};
 use std::io::Read;
 
@@ -123,6 +123,18 @@ enum Command {
         /// Show tasks under all their ancestors, from the root down.
         #[arg(long)]
         ancestors: bool,
+        /// Only tasks whose priority is in RANGE: `p0..p1`, `..p2`, `p3`, or
+        /// `none`.
+        #[arg(long, value_name = "RANGE", value_parser = parse_priority_range)]
+        priority: Option<Range>,
+        /// Only tasks whose attention is in RANGE: `..3`, `7..`, `4..6`, `5`,
+        /// or `none` for unrated.
+        #[arg(long, value_name = "RANGE", value_parser = parse_attention_range)]
+        attention: Option<Range>,
+        /// Only tasks whose size left is in RANGE: `..3`, `8..`, or `none`
+        /// for unsized.
+        #[arg(long, value_name = "RANGE", value_parser = parse_size_range)]
+        size: Option<Range>,
     },
     /// Print the project as an editable table, or apply an edited one
     ///
@@ -250,6 +262,25 @@ fn parse_size_or_none(s: &str) -> Result<OrNone<u32>, String> {
 
 fn parse_attention(s: &str) -> Result<u8, String> {
     task::parse_attention(s).map_err(|e| e.to_string())
+}
+
+fn parse_priority_range(s: &str) -> Result<Range, String> {
+    Range::parse(s, |b| task::parse_priority(b).map(i64::from)).map_err(|e| e.to_string())
+}
+
+fn parse_attention_range(s: &str) -> Result<Range, String> {
+    Range::parse(s, |b| task::parse_attention(b).map(i64::from)).map_err(|e| e.to_string())
+}
+
+/// Bounds can be any count, not only Fibonacci: what's left is a sum.
+fn parse_size_range(s: &str) -> Result<Range, String> {
+    let count = |b: &str| {
+        b.parse::<i64>()
+            .ok()
+            .filter(|&n| n >= 0)
+            .with_context(|| format!("invalid size {b:?}: expected a whole number"))
+    };
+    Range::parse(s, count).map_err(|e| e.to_string())
 }
 
 fn parse_attention_or_none(s: &str) -> Result<OrNone<u8>, String> {
@@ -387,7 +418,15 @@ fn run(cli: Cli) -> Result<()> {
             let p = project_for(&conn, &task.iter().collect::<Vec<_>>())?;
             print!("{}", tree(&conn, &p, task.as_ref(), ls)?);
         }
-        Command::Ls { sort, subtasks, groups, ancestors } => {
+        Command::Ls {
+            sort,
+            subtasks,
+            groups,
+            ancestors,
+            priority,
+            attention,
+            size,
+        } => {
             let sort = match sort.as_deref() {
                 None => Default::default(),
                 Some([field, order @ ..]) => {
@@ -400,8 +439,28 @@ fn run(cli: Cli) -> Result<()> {
                 (_, true) => view::Nest::Ancestors,
                 _ => view::Nest::Flat,
             };
+            let filter = Filter(
+                [
+                    (SortField::Priority, priority),
+                    (SortField::Attention, attention),
+                    (SortField::Size, size),
+                ]
+                .into_iter()
+                .filter_map(|(field, range)| Some((field, range?)))
+                .collect(),
+            );
             let tasks = Tasks::load(&conn, &project_for(&conn, &[])?)?;
-            print!("{}", view::ls(&tasks, &Derived::compute(&tasks), sort, subtasks, nest));
+            print!(
+                "{}",
+                view::ls(
+                    &tasks,
+                    &Derived::compute(&tasks),
+                    sort,
+                    &filter,
+                    subtasks,
+                    nest
+                )
+            );
         }
         Command::Outline {
             apply: true,

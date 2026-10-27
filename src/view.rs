@@ -6,7 +6,7 @@ use std::fmt::Write;
 
 use anstyle::{AnsiColor, Style};
 
-use crate::derived::{self, Derived, Sort};
+use crate::derived::{self, Derived, Filter, Sort};
 use crate::fmt::timestamp;
 use crate::task::Tasks;
 
@@ -192,7 +192,12 @@ pub fn tree(tasks: &Tasks, derived: &Derived, id: i64, mark: Option<&HashSet<i64
         .sized()
         .then(|| size_width(derived, std::iter::once(id).chain(tasks.descendants(id))));
     let mut out = String::new();
-    let row = Row { tasks, derived, width, mark };
+    let row = Row {
+        tasks,
+        derived,
+        width,
+        mark,
+    };
     write_tree(&row, id, 0, &mut out);
     out
 }
@@ -205,7 +210,12 @@ struct Row<'a> {
 }
 
 fn write_tree(row: &Row, id: i64, depth: usize, out: &mut String) {
-    let Row { tasks, derived, width, mark } = *row;
+    let Row {
+        tasks,
+        derived,
+        width,
+        mark,
+    } = *row;
     let t = tasks.get(id);
     let blocked = if derived.is_blocked(id) {
         format!("  {DIM}blocked{DIM:#}")
@@ -232,13 +242,25 @@ fn write_tree(row: &Row, id: i64, depth: usize, out: &mut String) {
     }
 }
 
-/// `ergon ls`: one row per task ready to start. With `subtasks`, each is
-/// followed by its subtasks, indented. `nest` puts rows under their
-/// ancestors.
-pub fn ls(tasks: &Tasks, derived: &Derived, sort: Sort, subtasks: bool, nest: Nest) -> String {
-    let ids = derived::ls(tasks, derived, sort);
+/// `ergon ls`: one row per task ready to start that `filter` keeps. With
+/// `subtasks`, each is followed by its subtasks, indented. `nest` puts rows
+/// under their ancestors.
+pub fn ls(
+    tasks: &Tasks,
+    derived: &Derived,
+    sort: Sort,
+    filter: &Filter,
+    subtasks: bool,
+    nest: Nest,
+) -> String {
+    let mut ids = derived::ls(tasks, derived, sort);
+    ids.retain(|&id| filter.keeps(tasks, derived, id));
     let shown = |id: i64| {
-        let below = if subtasks { tasks.descendants(id) } else { Vec::new() };
+        let below = if subtasks {
+            tasks.descendants(id)
+        } else {
+            Vec::new()
+        };
         std::iter::once(id).chain(below)
     };
     let width = derived
@@ -248,7 +270,13 @@ pub fn ls(tasks: &Tasks, derived: &Derived, sort: Sort, subtasks: bool, nest: Ne
         Nest::Flat => HashMap::from([(None, ids)]),
         _ => group_members(tasks, &ids, nest),
     };
-    let view = Ls { tasks, derived, width, subtasks, members };
+    let view = Ls {
+        tasks,
+        derived,
+        width,
+        subtasks,
+        members,
+    };
     let mut out = String::new();
     view.write(None, 0, &mut out);
     out
@@ -372,10 +400,18 @@ pub fn ls_rows(tasks: &Tasks, derived: &Derived, sort: Sort) -> Vec<(i64, String
 
 /// One `ls` row; its parent is named unless it's the root or the `group`
 /// the row is shown under.
-fn ls_row(tasks: &Tasks, derived: &Derived, id: i64, width: Option<usize>, group: Option<i64>) -> String {
+fn ls_row(
+    tasks: &Tasks,
+    derived: &Derived,
+    id: i64,
+    width: Option<usize>,
+    group: Option<i64>,
+) -> String {
     let t = tasks.get(id);
     let context = match t.parent_id.map(|p| tasks.get(p)) {
-        Some(p) if !p.is_root() && Some(p.id) != group => format!("  {DIM}(in: {}){DIM:#}", p.title()),
+        Some(p) if !p.is_root() && Some(p.id) != group => {
+            format!("  {DIM}(in: {}){DIM:#}", p.title())
+        }
         _ => String::new(),
     };
     let size = width.map_or(String::new(), |w| format!("{}  ", size(derived, id, w)));

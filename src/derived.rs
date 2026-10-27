@@ -332,14 +332,78 @@ impl Sort {
     }
 
     fn key(self, tasks: &Tasks, derived: &Derived, id: i64) -> Option<i64> {
+        self.field.value(tasks, derived, id)
+    }
+}
+
+impl SortField {
+    /// The value `ls` shows for the field: effective priority and attention,
+    /// and the size still left.
+    fn value(self, tasks: &Tasks, derived: &Derived, id: i64) -> Option<i64> {
         let t = tasks.get(id);
-        match self.field {
+        match self {
             SortField::Priority => derived.priority(id).map(i64::from),
             SortField::Attention => derived.attention(id).map(i64::from),
             SortField::Size => derived.size(id).map(|s| s.left as i64),
             SortField::Created => Some(t.created_at),
             SortField::Updated => Some(t.updated_at),
         }
+    }
+}
+
+/// A bound on one field for `ls`, written `2..5`, `..3`, `7..`, `5`, or
+/// `none` for tasks without a value. Both ends are included, so `p0..p1`
+/// takes p1.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Range {
+    Unset,
+    Within(Option<i64>, Option<i64>),
+}
+
+impl Range {
+    pub fn parse(s: &str, bound: impl Fn(&str) -> Result<i64>) -> Result<Range> {
+        if s == "none" {
+            return Ok(Range::Unset);
+        }
+        let side = |b: &str| (!b.is_empty()).then(|| bound(b)).transpose();
+        let (lo, hi) = match s.split_once("..") {
+            Some(("", "")) => {
+                bail!("invalid range {s:?}: give at least one end, as in 2..5, ..3 or 7..")
+            }
+            Some((lo, hi)) => (side(lo)?, side(hi)?),
+            None => {
+                let v = bound(s)?;
+                (Some(v), Some(v))
+            }
+        };
+        if let (Some(l), Some(h)) = (lo, hi)
+            && l > h
+        {
+            bail!("invalid range {s:?}: it starts after it ends");
+        }
+        Ok(Range::Within(lo, hi))
+    }
+
+    fn holds(self, value: Option<i64>) -> bool {
+        match (self, value) {
+            (Range::Unset, v) => v.is_none(),
+            (Range::Within(..), None) => false,
+            (Range::Within(lo, hi), Some(v)) => {
+                lo.is_none_or(|l| v >= l) && hi.is_none_or(|h| v <= h)
+            }
+        }
+    }
+}
+
+/// Which `ls` rows to keep: every range must hold.
+#[derive(Clone, Debug, Default)]
+pub struct Filter(pub Vec<(SortField, Range)>);
+
+impl Filter {
+    pub fn keeps(&self, tasks: &Tasks, derived: &Derived, id: i64) -> bool {
+        self.0
+            .iter()
+            .all(|&(field, range)| range.holds(field.value(tasks, derived, id)))
     }
 }
 

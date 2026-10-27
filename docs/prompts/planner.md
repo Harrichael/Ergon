@@ -131,10 +131,13 @@ ergon show <slug>
     One task in full: intent, status, priority, blocked or not,
     dependencies and dependents, subtask titles, and the command to
     delete it.
-ergon ls [--subtasks] [--groups | --ancestors]
+ergon ls [--subtasks] [--groups | --ancestors] [--priority|--attention|--size RANGE]
     Work that's ready to start. --subtasks lists each task's subtasks
     under it. --groups puts tasks under the parents they share, where two
     or more meet; --ancestors under all their ancestors, from the root.
+    --priority, --attention and --size keep tasks in a range, both ends
+    included: `--attention ..3`, `--priority p0..p1`, `--size 8..`, or
+    `none` for tasks without a value.
 ergon prompt root
     These instructions and the project's root intent, as they are now. Run
     it if your context was compacted and you've lost them.
