@@ -8,6 +8,7 @@ use anyhow::{Context, Result, bail};
 use rusqlite::{Connection, params};
 use serde::Serialize;
 
+use crate::on_path;
 use crate::project::Project;
 use crate::task::{Status, Tasks};
 
@@ -60,13 +61,6 @@ fn find_claude() -> Result<PathBuf> {
         return Ok(path);
     }
     on_path(&path).with_context(|| format!("{} not found on PATH", path.display()))
-}
-
-fn on_path(program: &Path) -> Option<PathBuf> {
-    let dirs = std::env::var_os("PATH").unwrap_or_default();
-    std::env::split_paths(&dirs)
-        .map(|d| d.join(program))
-        .find(|p| p.is_file())
 }
 
 /// The tasks one session works on, in tree order: one task, or several

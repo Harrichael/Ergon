@@ -1,0 +1,142 @@
+# ergon show lists the choros landing sets that carry a task, and --pr finds
+# the tasks a PR carries. A set carries the tasks its labels name; a set
+# with no labels carries the tasks whose session it was forked from. So one
+# session that took on several tasks can land each in its own set.
+
+$ cd ws
+$ ergon init demo "Build a demo" --no-launch
+Created project demo in $ROOT/ws
+$ ergon add Backend
+qxpj
+$ ergon add API --parent qxpj
+FTFE
+$ ergon add Docs --parent qxpj
+nHcx
+$ ergon add Frontend
+pQyk
+$ ergon attach qxpj --session 0b5e0b5e-0000-4000-8000-000000000001
+attached session 0b5e0b5e-0000-4000-8000-000000000001 to demo/qxpj; `ergon prompt demo/qxpj` prints its instructions
+
+# Without choros there's nothing to look in.
+$ ergon show qxpj
+demo/qxpj  Backend
+status:    in_progress
+priority:  p-
+blocked:   no
+parent:    demo/root  Build a demo
+created:   2025-10-09 08:53 (just now)
+updated:   2025-10-09 08:53 (just now)
+session:   0b5e0b5e-0000-4000-8000-000000000001 in $ROOT/ws
+delete:    ergon rm demo/qxpj --subtasks 2 --dependents 0
+
+Backend
+
+Subtasks:
+  - FTFE  in_progress  API
+  - nHcx  in_progress  Docs
+$ ergon show --pr 118
+error: choros isn't on PATH, so there are no landing sets to look in
+[exit 1]
+
+$ fake-choros <<EOF
+{
+  "queues": [
+    {
+      "name": "appq",
+      "sets": [
+        {"n": 1, "repo": "app", "state": "merged", "pr": {"number": 112, "url": "u"},
+         "sessions": [{"source": "0b5e0b5e-0000-4000-8000-000000000001", "fork": "f1"}],
+         "labels": ["demo/FTFE"]},
+        {"n": 2, "repo": "app", "state": "front", "pr": {"number": 118, "url": "u"},
+         "sessions": [{"source": "0b5e0b5e-0000-4000-8000-000000000001", "fork": "f2"}],
+         "labels": ["demo/nHcx", "someone-elses-label"]},
+        {"n": 3, "repo": "app", "state": "queued", "pr": null,
+         "sessions": [{"source": "0b5e0b5e-0000-4000-8000-000000000001", "fork": "f3"}],
+         "labels": []}
+      ]
+    },
+    {
+      "name": "webq",
+      "sets": [
+        {"n": 1, "repo": "web", "state": "front", "pr": {"number": 118, "url": "u"},
+         "sessions": [{"source": "unknown", "fork": "f4"}], "labels": []}
+      ]
+    }
+  ]
+}
+EOF
+
+# A task's landings include those of the tasks under it.
+$ ergon show qxpj
+demo/qxpj  Backend
+status:    in_progress
+priority:  p-
+blocked:   no
+parent:    demo/root  Build a demo
+created:   2025-10-09 08:53 (just now)
+updated:   2025-10-09 08:53 (just now)
+session:   0b5e0b5e-0000-4000-8000-000000000001 in $ROOT/ws
+delete:    ergon rm demo/qxpj --subtasks 2 --dependents 0
+
+Backend
+
+Subtasks:
+  - FTFE  in_progress  API
+  - nHcx  in_progress  Docs
+
+Landings:
+  - appq  landing-1  merged  app #112  (FTFE)
+  - appq  landing-2  front   app #118  (nHcx)
+    choros landing open 2 --queue appq
+  - appq  landing-3  queued  app, no PR
+    choros landing open 3 --queue appq
+
+# The bag session's unlabelled set isn't the API's: it can't say which of
+# the session's tasks it carries. The API's session is its parent's, so
+# choros is asked from there.
+$ ergon show FTFE
+demo/FTFE  API
+status:    in_progress (inherited)
+priority:  p-
+blocked:   no
+parent:    demo/qxpj  Backend
+created:   2025-10-09 08:53 (just now)
+updated:   2025-10-09 08:53 (just now)
+delete:    ergon rm demo/FTFE --subtasks 0 --dependents 0
+
+API
+
+Landings:
+  - appq  landing-1  merged  app #112
+
+# PR numbers are per repo, so PR 118 may be two sets.
+$ ergon show --pr 118
+appq  landing-2  front   app #118
+  choros landing open 2 --queue appq
+  - demo/nHcx  in_progress  Docs
+webq  landing-1  front   web #118
+  choros landing open 1 --queue webq
+  no tasks: no ergon task is labelled on it or began its session
+$ ergon show --pr 999
+error: no landing set has PR #999
+[exit 1]
+
+# Where choros can't answer, show still shows the task.
+$ cd elsewhere
+$ ergon attach demo/pQyk --session 0b5e0b5e-0000-4000-8000-000000000002
+attached session 0b5e0b5e-0000-4000-8000-000000000002 to demo/pQyk; `ergon prompt demo/pQyk` prints its instructions
+$ ergon show demo/pQyk
+demo/pQyk  Frontend
+status:    in_progress
+priority:  p-
+blocked:   no
+parent:    demo/root  Build a demo
+created:   2025-10-09 08:53 (just now)
+updated:   2025-10-09 08:53 (just now)
+session:   0b5e0b5e-0000-4000-8000-000000000002 in $ROOT/elsewhere
+delete:    ergon rm demo/pQyk --subtasks 0 --dependents 0
+
+Frontend
+
+Landings:
+  can't read them: choros status failed in $ROOT/elsewhere: not under a choros trunk (no .choros-config above here)

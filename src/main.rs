@@ -9,7 +9,7 @@ use ergon::refs::{self, TaskRef, TaskRefs};
 use ergon::task::{self, Status, Tasks};
 
 use ergon::derived::{Derived, Filter, Range, SortField};
-use ergon::{claude, db, export, fmt, outline, picker, view};
+use ergon::{claude, db, export, fmt, landings, outline, picker, view};
 use std::io::Read;
 
 /// Minimal task tracker for dispatching work to Claude Code sessions.
@@ -90,12 +90,16 @@ enum Command {
     Restore { task: TaskRef },
     /// Move a task, with its subtree, under a new parent.
     Mv { task: TaskRef, new_parent: TaskRef },
-    /// Show one task in full.
+    /// Show one task in full, with the choros landing sets that carry it.
     Show {
-        task: TaskRef,
+        #[arg(required_unless_present = "pr")]
+        task: Option<TaskRef>,
         /// Print only the intent.
         #[arg(long)]
         intent: bool,
+        /// Instead, show the landing sets of this PR and the tasks they carry.
+        #[arg(long, conflicts_with_all = ["task", "intent"])]
+        pr: Option<u64>,
     },
     /// Show the task tree (default: from the root).
     Tree {
@@ -462,7 +466,26 @@ fn run(cli: Cli) -> Result<()> {
                 println!("Restored {r}");
             }
         }
-        Command::Show { task, intent } => {
+        Command::Show {
+            task: None,
+            pr: Some(pr),
+            ..
+        } => {
+            let Some(all) = landings::read(&cwd)? else {
+                bail!("choros isn't on PATH, so there are no landing sets to look in");
+            };
+            let sets: Vec<_> = all.iter().filter(|l| l.pr == Some(pr)).collect();
+            if sets.is_empty() {
+                bail!("no landing set has PR #{pr}");
+            }
+            let projects = project::list(&conn, true)?
+                .iter()
+                .map(|p| Tasks::load(&conn, p))
+                .collect::<Result<Vec<_>>>()?;
+            print!("{}", view::pr_tasks(&sets, &projects));
+        }
+        Command::Show { task, intent, .. } => {
+            let task = task.expect("clap requires a task without --pr");
             let p = project_for(&conn, &[&task])?;
             let tasks = Tasks::load(&conn, &p)?;
             let id = tasks.live(&task.slug)?.id;
@@ -471,7 +494,12 @@ fn run(cli: Cli) -> Result<()> {
                 return Ok(());
             }
             let derived = Derived::compute(&tasks);
-            print!("{}", view::show(&tasks, &derived, id, ergon::now()));
+            let dir = landings::dir_for(&tasks, id).unwrap_or(&cwd);
+            let found = landings::read(dir).transpose();
+            print!(
+                "{}",
+                view::show(&tasks, &derived, id, ergon::now(), found.as_ref())
+            );
         }
         Command::Tree { task, ls } => {
             let p = project_for(&conn, &task.iter().collect::<Vec<_>>())?;

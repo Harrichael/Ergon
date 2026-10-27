@@ -3,6 +3,7 @@ pub mod db;
 pub mod derived;
 pub mod export;
 pub mod fmt;
+pub mod landings;
 pub mod ops;
 pub mod outline;
 pub mod picker;
@@ -45,4 +46,12 @@ pub fn uuid(rng: &mut impl rand::Rng) -> String {
     uuid::Builder::from_random_bytes(bytes)
         .into_uuid()
         .to_string()
+}
+
+/// Where `program` is found on `PATH`.
+pub(crate) fn on_path(program: &std::path::Path) -> Option<std::path::PathBuf> {
+    let dirs = std::env::var_os("PATH").unwrap_or_default();
+    std::env::split_paths(&dirs)
+        .map(|d| d.join(program))
+        .find(|p| p.is_file())
 }

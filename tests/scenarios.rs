@@ -18,6 +18,9 @@
 //!   and one ending in `> <file>` writes its stdout to that file instead.
 //! - `$ cd <dir>` changes directory (created if missing) and `$ rmdir <dir>`
 //!   removes one; both are relative to the scenario's root.
+//! - `$ fake-choros <<EOF` puts a fake `choros` on PATH for the rest of the
+//!   scenario. Its `status --json --all` prints the JSON given here when run
+//!   in this directory, and fails elsewhere.
 //! - The expected output is every line up to the next `$ ` line, minus
 //!   trailing blank and comment lines. It's stdout, then stderr, then
 //!   `[exit N]` if the command failed. A line of just `...` matches any
@@ -44,6 +47,13 @@ for arg in "$@"; do printf '%s\n' "$arg"; done
 if [ "$1" = --session-id ] && [ -z "$CRASH" ]; then
   mkdir -p "$CLAUDE_CONFIG_DIR/projects/p" && printf '{"cwd":"%s"}\n' "$PWD" > "$CLAUDE_CONFIG_DIR/projects/p/$2.jsonl"
 fi
+"#;
+
+// Prints the JSON `fake-choros` left in the directory it runs in.
+const FAKE_CHOROS: &str = r#"#!/bin/sh
+[ "$*" = "status --json --all" ] || { echo "choros: fake choros can't $*" >&2; exit 2; }
+[ -f .choros-status.json ] || { echo "choros: not under a choros trunk (no .choros-config above here)" >&2; exit 1; }
+cat .choros-status.json
 "#;
 
 struct Step {
@@ -172,6 +182,8 @@ struct Sandbox {
     db: PathBuf,
     claude: PathBuf,
     cwd: PathBuf,
+    /// Holds the fake `choros` once a scenario asks for it.
+    bin: Option<PathBuf>,
 }
 
 impl Sandbox {
@@ -183,16 +195,23 @@ impl Sandbox {
         // (on macOS the temp dir is under /var, a link to /private/var).
         let root = root.canonicalize().unwrap();
         let claude = tmp.path().join("fake-claude");
-        std::fs::write(&claude, FAKE_CLAUDE).unwrap();
-        use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(&claude, std::fs::Permissions::from_mode(0o755)).unwrap();
+        write_script(&claude, FAKE_CLAUDE);
         Sandbox {
             db: tmp.path().join("ergon.db"),
             cwd: root.clone(),
             root,
             claude,
+            bin: None,
             _tmp: tmp,
         }
+    }
+
+    fn fake_choros(&mut self, status: &[String]) {
+        let bin = self.claude.with_file_name("bin");
+        std::fs::create_dir_all(&bin).unwrap();
+        write_script(&bin.join("choros"), FAKE_CHOROS);
+        std::fs::write(self.cwd.join(".choros-status.json"), status.join("\n")).unwrap();
+        self.bin = Some(bin);
     }
 
     fn run(&mut self, command: &str, stdin: Option<&[String]>) -> Vec<String> {
@@ -219,6 +238,10 @@ impl Sandbox {
             }
             "rmdir" => {
                 std::fs::remove_dir_all(self.root.join(&args[0])).unwrap();
+                Vec::new()
+            }
+            "fake-choros" => {
+                self.fake_choros(stdin.expect("fake-choros reads its JSON from <<EOF"));
                 Vec::new()
             }
             "ergon" => self.ergon(args, &env, stdin, redirect),
@@ -250,7 +273,13 @@ impl Sandbox {
             .env("NO_COLOR", "1")
             // The work prompt says more when choros is on PATH; keep the
             // machine's install out of it.
-            .env("PATH", "/usr/bin:/bin")
+            .env(
+                "PATH",
+                match &self.bin {
+                    Some(bin) => format!("{}:/usr/bin:/bin", bin.display()),
+                    None => "/usr/bin:/bin".to_string(),
+                },
+            )
             // The tests may themselves run inside Claude Code.
             .env_remove("CLAUDE_CODE_SESSION_ID")
             .envs(env.iter().map(|(k, v)| (k, v)))
@@ -286,6 +315,12 @@ impl Sandbox {
         }
         lines
     }
+}
+
+fn write_script(path: &Path, text: &str) {
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::write(path, text).unwrap();
+    std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o755)).unwrap();
 }
 
 /// Runs one scenario, returning a failure report if any step mismatched.

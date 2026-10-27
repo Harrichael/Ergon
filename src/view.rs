@@ -8,6 +8,7 @@ use anstyle::{AnsiColor, Style};
 
 use crate::derived::{self, Derived, Filter, Sort};
 use crate::fmt::timestamp;
+use crate::landings::{self, Landing};
 use crate::task::Tasks;
 
 const STORED: Style = Style::new().bold();
@@ -79,8 +80,14 @@ fn status(tasks: &Tasks, id: i64) -> String {
     format!("{:<11}", tasks.effective_status(id).as_str())
 }
 
-/// One task in full.
-pub fn show(tasks: &Tasks, derived: &Derived, id: i64, now: i64) -> String {
+/// One task in full. `landings` is what choros reported, if it's installed.
+pub fn show(
+    tasks: &Tasks,
+    derived: &Derived,
+    id: i64,
+    now: i64,
+    landings: Option<&anyhow::Result<Vec<Landing>>>,
+) -> String {
     let t = tasks.get(id);
     let mut out = String::new();
     let _ = writeln!(out, "{}  {}", tasks.reference(id), t.title());
@@ -179,6 +186,75 @@ pub fn show(tasks: &Tasks, derived: &Derived, id: i64, now: i64) -> String {
                 t.slug,
                 status(tasks, t.id),
                 t.title()
+            );
+        }
+    }
+    match landings {
+        None => {}
+        Some(Err(e)) => {
+            let _ = writeln!(out, "\nLandings:\n  {DIM}can't read them: {e:#}{DIM:#}");
+        }
+        Some(Ok(all)) => {
+            let mine = landings::of_task(tasks, id, all);
+            if !mine.is_empty() {
+                let _ = writeln!(out, "\nLandings:");
+            }
+            for tl in mine {
+                let others: Vec<&str> = tl
+                    .carried
+                    .iter()
+                    .filter(|&&t| t != id)
+                    .map(|&t| tasks.get(t).slug.as_str())
+                    .collect();
+                let via = if others.is_empty() {
+                    String::new()
+                } else {
+                    format!("  ({})", others.join(", "))
+                };
+                let _ = writeln!(out, "  - {}{via}", landing_line(tl.landing));
+                if tl.landing.is_open() {
+                    let _ = writeln!(out, "    {}", open_command(tl.landing));
+                }
+            }
+        }
+    }
+    out
+}
+
+fn landing_line(l: &Landing) -> String {
+    let pr = match l.pr {
+        Some(n) => format!("{} #{n}", l.repo),
+        None => format!("{}, no PR", l.repo),
+    };
+    format!("{}  landing-{}  {:<6}  {pr}", l.queue, l.n, l.state)
+}
+
+fn open_command(l: &Landing) -> String {
+    format!("choros landing open {} --queue {}", l.n, l.queue)
+}
+
+/// The landing sets of a PR, each with the tasks it carries.
+pub fn pr_tasks(sets: &[&Landing], projects: &[Tasks]) -> String {
+    let mut out = String::new();
+    for l in sets {
+        let _ = writeln!(out, "{}", landing_line(l));
+        if l.is_open() {
+            let _ = writeln!(out, "  {}", open_command(l));
+        }
+        let carried = landings::tasks_of(l, projects);
+        if carried.is_empty() {
+            let _ = writeln!(
+                out,
+                "  {DIM}no tasks: no ergon task is labelled on it or began its session{DIM:#}"
+            );
+        }
+        for (tasks, id) in carried {
+            let _ = writeln!(
+                out,
+                "  - {}  {}  {}",
+                tasks.reference(id),
+                status(tasks, id),
+                tasks.get(id).title()
             );
         }
     }

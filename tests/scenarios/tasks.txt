@@ -107,7 +107,7 @@ error: invalid value 'p5' for '--priority <PRIORITY>': invalid priority "p5": ex
 For more information, try '--help'.
 [exit 2]
 $ ergon show E0dn
-error: invalid value 'E0dn' for '<TASK>': invalid task slug "E0dn"
+error: invalid value 'E0dn' for '[TASK]': invalid task slug "E0dn"
 
 For more information, try '--help'.
 [exit 2]

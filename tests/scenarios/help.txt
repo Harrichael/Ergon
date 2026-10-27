@@ -30,7 +30,7 @@ Commands:
   rm       Delete a task and its subtree. The counts must match `show`
   restore  Undo a deletion
   mv       Move a task, with its subtree, under a new parent
-  show     Show one task in full
+  show     Show one task in full, with the choros landing sets that carry it
   tree     Show the task tree (default: from the root)
   ls       List the coarsest open, unblocked work, most urgent first
   outline  Print the project as an editable table, or apply an edited one
