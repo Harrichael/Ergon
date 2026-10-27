@@ -244,7 +244,7 @@ fn write_tree(row: &Row, id: i64, depth: usize, out: &mut String) {
 
 /// `ergon ls`: one row per task ready to start that `filter` keeps. With
 /// `subtasks`, each is followed by its subtasks, indented. `nest` puts rows
-/// under their ancestors.
+/// under their ancestors. With `intent`, each task's body follows its row.
 pub fn ls(
     tasks: &Tasks,
     derived: &Derived,
@@ -252,6 +252,7 @@ pub fn ls(
     filter: &Filter,
     subtasks: bool,
     nest: Nest,
+    intent: bool,
 ) -> String {
     let mut ids = derived::ls(tasks, derived, sort);
     ids.retain(|&id| filter.keeps(tasks, derived, id));
@@ -275,6 +276,7 @@ pub fn ls(
         derived,
         width,
         subtasks,
+        intent,
         members,
     };
     let mut out = String::new();
@@ -333,6 +335,7 @@ struct Ls<'a> {
     derived: &'a Derived,
     width: Option<usize>,
     subtasks: bool,
+    intent: bool,
     members: HashMap<Option<i64>, Vec<i64>>,
 }
 
@@ -348,42 +351,61 @@ impl Ls<'_> {
             }
             let row = ls_row(self.tasks, self.derived, id, self.width, group);
             let _ = writeln!(out, "{pad}{row}");
+            self.write_body(id, depth + 1, out);
             if self.subtasks {
                 for c in self.tasks.children(id) {
-                    write_ls_subtask(self.tasks, self.derived, c.id, depth + 1, self.width, out);
+                    self.write_subtask(c.id, depth + 1, out);
                 }
             }
         }
     }
-}
 
-fn write_ls_subtask(
-    tasks: &Tasks,
-    derived: &Derived,
-    id: i64,
-    depth: usize,
-    width: Option<usize>,
-    out: &mut String,
-) {
-    let t = tasks.get(id);
-    let size = width.map_or(String::new(), |w| format!("{}  ", size(derived, id, w)));
-    let blocked = if derived.is_blocked(id) {
-        format!("  {DIM}blocked{DIM:#}")
-    } else {
-        String::new()
-    };
-    let _ = writeln!(
-        out,
-        "{}{}  {}  {}  {size}{}{}{blocked}",
-        "  ".repeat(depth),
-        t.slug,
-        priority(tasks, derived, id),
-        status(tasks, id),
-        attention_column(tasks, derived, id),
-        t.title()
-    );
-    for c in tasks.children(id) {
-        write_ls_subtask(tasks, derived, c.id, depth + 1, width, out);
+    fn write_subtask(&self, id: i64, depth: usize, out: &mut String) {
+        let (tasks, derived) = (self.tasks, self.derived);
+        let t = tasks.get(id);
+        let size = self
+            .width
+            .map_or(String::new(), |w| format!("{}  ", size(derived, id, w)));
+        let blocked = if derived.is_blocked(id) {
+            format!("  {DIM}blocked{DIM:#}")
+        } else {
+            String::new()
+        };
+        let _ = writeln!(
+            out,
+            "{}{}  {}  {}  {size}{}{}{blocked}",
+            "  ".repeat(depth),
+            t.slug,
+            priority(tasks, derived, id),
+            status(tasks, id),
+            attention_column(tasks, derived, id),
+            t.title()
+        );
+        self.write_body(id, depth + 1, out);
+        for c in tasks.children(id) {
+            self.write_subtask(c.id, depth + 1, out);
+        }
+    }
+
+    /// The intent past its title, behind a `│` gutter. `ergon work -` skips
+    /// gutter lines, so `ls --intent` still pipes into it.
+    fn write_body(&self, id: i64, depth: usize, out: &mut String) {
+        if !self.intent {
+            return;
+        }
+        let intent = self.tasks.get(id).intent.trim();
+        let Some((_, body)) = intent.split_once('\n') else {
+            return;
+        };
+        let pad = "  ".repeat(depth);
+        for line in body.trim_start_matches(['\n', '\r']).trim_end().lines() {
+            let line = line.trim_end();
+            if line.is_empty() {
+                let _ = writeln!(out, "{pad}{DIM}│{DIM:#}");
+            } else {
+                let _ = writeln!(out, "{pad}{DIM}│{DIM:#} {line}");
+            }
+        }
     }
 }
 

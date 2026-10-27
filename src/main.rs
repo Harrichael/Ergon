@@ -135,6 +135,9 @@ enum Command {
         /// for unsized.
         #[arg(long, value_name = "RANGE", value_parser = parse_size_range)]
         size: Option<Range>,
+        /// Show each task's full intent: its body under its row.
+        #[arg(long)]
+        intent: bool,
     },
     /// Print the project as an editable table, or apply an edited one
     ///
@@ -447,6 +450,7 @@ fn run(cli: Cli) -> Result<()> {
             priority,
             attention,
             size,
+            intent,
         } => {
             let sort = match sort.as_deref() {
                 None => Default::default(),
@@ -479,7 +483,8 @@ fn run(cli: Cli) -> Result<()> {
                     sort,
                     &filter,
                     subtasks,
-                    nest
+                    nest,
+                    intent,
                 )
             );
         }

@@ -69,3 +69,19 @@ root  Root
   AENA  Ops
     FubR  Deploy
       bfLH  p-  todo         Rollout
+
+# --intent shows each task's body under its row, behind a gutter that
+# `ergon work -` skips.
+$ ergon edit nHcx --intent "Cart\n\nKeep items across sessions.\n\nShow totals with tax."
+$ ergon ls --intent --groups --subtasks
+qxpj  p-  todo         Blocker
+FTFE  Checkout
+  nHcx  p-  todo         Cart
+    │ Keep items across sessions.
+    │
+    │ Show totals with tax.
+    Hwgf  p-  todo         Badge
+  pQyk  Payments
+    9cDQ  p-  todo         Cards
+    dFR6  p-  todo         Wallets
+bfLH  p-  todo         Rollout  (in: Deploy)

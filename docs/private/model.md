@@ -390,7 +390,7 @@ ergon tree [<ref>] [--ls]
     attention. --ls marks the tasks `ergon ls` lists with a ▸ gutter and a
     bold title.
 ergon ls [--sort FIELD [asc|desc]] [--subtasks] [--groups | --ancestors]
-         [--priority RANGE] [--attention RANGE] [--size RANGE]
+         [--priority RANGE] [--attention RANGE] [--size RANGE] [--intent]
     --subtasks follows each row with its subtasks, indented, in tree order.
     --groups nests rows under the ancestors they share: an ancestor is shown
     (slug and bold title) only where listed tasks reach it through two or
@@ -401,6 +401,8 @@ ergon ls [--sort FIELD [asc|desc]] [--subtasks] [--groups | --ancestors]
     (as shown: effective priority and attention, size left) is in RANGE:
     `a..b`, `..b`, `a..` or `a`, both ends included, or `none` for no value.
     Flags combine; the filter runs before nesting.
+    --intent follows each task row with the rest of its intent behind a dim
+    `│` gutter; `ergon work -` skips gutter lines, so it still pipes.
 ergon outline [--json]
 ergon outline --apply [--dry-run]
 ergon outline --format

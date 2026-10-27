@@ -61,9 +61,11 @@ impl TaskRefs {
 
     /// The references in piped text: the first word of each line, so rows of
     /// `ergon ls` read as their tasks, and comma-separated lists work too.
+    /// Lines behind `ls --intent`'s `│` gutter are bodies, not tasks.
     pub fn from_listing(text: &str) -> Result<TaskRefs> {
         text.lines()
             .filter_map(|l| l.split_whitespace().next())
+            .filter(|w| !w.starts_with('│'))
             .flat_map(|w| w.split(','))
             .filter(|r| !r.is_empty())
             .map(str::parse)
@@ -117,7 +119,7 @@ mod tests {
 
     #[test]
     fn piped_listings_read_as_their_tasks() {
-        let ls = "E6dn  p2  todo         First  (in: Parent)\n\nab/qxpj  p-  todo  Second\n";
+        let ls = "E6dn  p2  todo         First  (in: Parent)\n  │ A body line.\n  │\n\nab/qxpj  p-  todo  Second\n";
         assert_eq!(
             TaskRefs::from_listing(ls).unwrap().0,
             [
