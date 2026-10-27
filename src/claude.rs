@@ -214,7 +214,12 @@ pub fn attach(
     let tasks = Tasks::load(&tx, project)?;
     let ids = selection(&tasks, slugs)?;
     for &id in &ids {
-        if let Some(other) = tasks.get(id).claude_session.as_deref().filter(|s| *s != session) {
+        if let Some(other) = tasks
+            .get(id)
+            .claude_session
+            .as_deref()
+            .filter(|s| *s != session)
+        {
             let r = tasks.reference(id);
             bail!("{r} already has session {other}; `ergon work {r}` resumes it");
         }
