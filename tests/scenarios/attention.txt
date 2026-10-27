@@ -1,0 +1,114 @@
+# Attention: how much a task needs the user, 1 (just execute) to 10 (their
+# decision). Views show it once any task has one.
+
+$ ergon init demo Root --no-launch
+Created project demo in $ROOT
+$ ergon add Epic
+qxpj
+$ ergon add API --parent qxpj
+FTFE
+$ ergon add UI --parent qxpj
+nHcx
+$ ergon tree
+root  in_progress  p-  Root
+  qxpj  todo         p-  Epic
+    FTFE  todo         p-  API
+    nHcx  todo         p-  UI
+
+# Rating one subtask leaves the epic unknown while its sibling is unrated.
+$ ergon edit FTFE --attention 3
+$ ergon tree
+root  in_progress  p-  a?   Root
+  qxpj  todo         p-  a?   Epic
+    FTFE  todo         p-  a3   API
+    nHcx  todo         p-  a?   UI
+$ ergon edit nHcx --attention 2
+$ ergon add "Pick the auth provider" --parent FTFE --attention 9
+pQyk
+$ ergon tree
+root  in_progress  p-  a9   Root
+  qxpj  todo         p-  a9   Epic
+    FTFE  todo         p-  a9   API
+      pQyk  todo         p-  a9   Pick the auth provider
+    nHcx  todo         p-  a2   UI
+$ ergon ls
+qxpj  p-  todo         a9   Epic
+$ ergon show FTFE
+demo/FTFE  API
+status:    todo (inherited)
+priority:  p-
+attention: 9 (raised from stored 3 by subtasks)
+blocked:   no
+parent:    demo/qxpj  Epic
+created:   2025-10-09 08:53 (just now)
+updated:   2025-10-09 08:53 (just now)
+delete:    ergon rm demo/FTFE --subtasks 1 --dependents 0
+
+API
+
+Subtasks:
+  - pQyk  todo         Pick the auth provider
+$ ergon show qxpj
+demo/qxpj  Epic
+status:    todo
+priority:  p-
+attention: 9 (inferred)
+blocked:   no
+parent:    demo/root  Root
+created:   2025-10-09 08:53 (just now)
+updated:   2025-10-09 08:53 (just now)
+delete:    ergon rm demo/qxpj --subtasks 3 --dependents 0
+
+Epic
+
+Subtasks:
+  - FTFE  todo         API
+  - nHcx  todo         UI
+
+# Done work keeps its rating but no longer raises its parent's.
+$ ergon edit pQyk --status done
+$ ergon tree
+root  in_progress  p-  a3   Root
+  qxpj  todo         p-  a3   Epic
+    FTFE  todo         p-  a3   API
+      pQyk  done         p-  a9   Pick the auth provider
+    nHcx  todo         p-  a2   UI
+$ ergon show pQyk
+demo/pQyk  Pick the auth provider
+status:    done
+priority:  p-
+attention: 9
+blocked:   no
+parent:    demo/FTFE  API
+created:   2025-10-09 08:53 (just now)
+updated:   2025-10-09 08:53 (just now)
+delete:    ergon rm demo/pQyk --subtasks 0 --dependents 0
+
+Pick the auth provider
+
+$ ergon edit FTFE --attention none
+$ ergon show FTFE
+demo/FTFE  API
+status:    todo (inherited)
+priority:  p-
+attention: ? (unknown)
+blocked:   no
+parent:    demo/qxpj  Epic
+created:   2025-10-09 08:53 (just now)
+updated:   2025-10-09 08:53 (just now)
+delete:    ergon rm demo/FTFE --subtasks 1 --dependents 0
+
+API
+
+Subtasks:
+  - pQyk  done         Pick the auth provider
+$ ergon edit FTFE --attention 11
+error: invalid value '11' for '--attention <ATTENTION>': invalid attention "11": expected 1 to 10
+
+For more information, try '--help'.
+[exit 2]
+$ ergon add Bad --attention 0
+error: invalid value '0' for '--attention <ATTENTION>': invalid attention "0": expected 1 to 10
+
+For more information, try '--help'.
+[exit 2]

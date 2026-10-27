@@ -97,6 +97,14 @@ pub fn parse_size(s: &str) -> Result<u32> {
     Ok(n)
 }
 
+/// Parses an attention: 1 (just execute) to 10 (the user's decision).
+pub fn parse_attention(s: &str) -> Result<u8> {
+    s.parse()
+        .ok()
+        .filter(|n| (1..=10).contains(n))
+        .with_context(|| format!("invalid attention {s:?}: expected 1 to 10"))
+}
+
 fn is_fibonacci(n: u32) -> bool {
     let (mut a, mut b) = (1u64, 2u64);
     while a < n as u64 {
@@ -127,6 +135,8 @@ pub struct Task {
     pub priority: Option<u8>,
     /// A size marks the task as one unit of work; its subtasks are steps.
     pub size: Option<u32>,
+    /// 1 (just execute) to 10 (the user's decision).
+    pub attention: Option<u8>,
     pub claude_session: Option<String>,
     pub claude_cwd: Option<String>,
     pub created_at: i64,
@@ -151,7 +161,7 @@ impl Task {
 }
 
 const COLUMNS: &str = "id, project_id, slug, parent_id, intent, status, priority, \
-     claude_session, claude_cwd, created_at, updated_at, deleted_at, position, size";
+     claude_session, claude_cwd, created_at, updated_at, deleted_at, position, size, attention";
 
 fn from_row(row: &Row) -> rusqlite::Result<Task> {
     Ok(Task {
@@ -169,6 +179,7 @@ fn from_row(row: &Row) -> rusqlite::Result<Task> {
         deleted_at: row.get(11)?,
         position: row.get(12)?,
         size: row.get(13)?,
+        attention: row.get(14)?,
     })
 }
 

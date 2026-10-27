@@ -16,7 +16,7 @@ enum Step {
 /// Schema migrations, applied in order. Step `i` brings the database to
 /// `PRAGMA user_version = i + 1`. Released steps are frozen (a test checks
 /// their hashes): never edit one, append another.
-const MIGRATIONS: &[Step] = &[Step::Sql(V1), Step::Sql(V2), Step::Sql(V3)];
+const MIGRATIONS: &[Step] = &[Step::Sql(V1), Step::Sql(V2), Step::Sql(V3), Step::Sql(V4)];
 
 const BUSY_TIMEOUT: Duration = Duration::from_secs(5);
 
@@ -75,6 +75,11 @@ UPDATE tasks SET position = (
 const V3: &str = r#"
 -- A task's size, a Fibonacci number; ergon checks which values are allowed.
 ALTER TABLE tasks ADD COLUMN size INTEGER CHECK (size > 0);
+"#;
+
+const V4: &str = r#"
+-- How much a task needs the user, from 1 (just execute) to 10 (their decision).
+ALTER TABLE tasks ADD COLUMN attention INTEGER CHECK (attention BETWEEN 1 AND 10);
 "#;
 
 /// `$ERGON_DB`, else `$XDG_DATA_HOME/ergon/ergon.db`, else

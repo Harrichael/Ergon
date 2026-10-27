@@ -41,7 +41,7 @@ root  in_progress  p-  Alpha
 # Everything: retired projects, deleted tasks, sessions, order.
 $ ergon export
 {
-  "format": 2,
+  "format": 3,
   "projects": [
     {
       "uuid": "400c6373-839f-41ec-9edf-c384f5d734e5",
@@ -56,6 +56,7 @@ $ ergon export
           "status": "in_progress",
           "priority": null,
           "size": null,
+          "attention": null,
           "claude_session": null,
           "claude_cwd": null,
           "created_at": 1760000000,
@@ -70,6 +71,7 @@ $ ergon export
           "status": "todo",
           "priority": 1,
           "size": null,
+          "attention": null,
           "claude_session": null,
           "claude_cwd": null,
           "created_at": 1760000000,
@@ -84,6 +86,7 @@ $ ergon export
           "status": "in_progress",
           "priority": null,
           "size": null,
+          "attention": null,
           "claude_session": "9487b132-9170-4b0c-ad01-fba48316f5e9",
           "claude_cwd": "$ROOT/a",
           "created_at": 1760000000,
@@ -98,6 +101,7 @@ $ ergon export
           "status": "todo",
           "priority": null,
           "size": null,
+          "attention": null,
           "claude_session": null,
           "claude_cwd": null,
           "created_at": 1760000000,
@@ -112,6 +116,7 @@ $ ergon export
           "status": null,
           "priority": null,
           "size": null,
+          "attention": null,
           "claude_session": null,
           "claude_cwd": null,
           "created_at": 1760000000,
@@ -140,6 +145,7 @@ $ ergon export
           "status": "in_progress",
           "priority": null,
           "size": null,
+          "attention": null,
           "claude_session": null,
           "claude_cwd": null,
           "created_at": 1760000000,

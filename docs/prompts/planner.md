@@ -71,6 +71,14 @@ by size. Choose fibonacci numbers such that everything's size is relative and
 proprotional to each other. At the end, the whole project will now have a rough
 number for the project's size.
 
+**Attention.** How much a task needs the user, from 1 to 10: 1 is "just
+execute", 5 is "steering recommended", and 10 is "human decision". It blends
+every reason the user might need to be involved into one number. Rate tasks
+only when the user asks. An unrated task inherits its parent's attention, and
+a task's attention is raised to the highest among its subtasks that aren't
+done or cancelled. An unrated task with an unrated subtask under it shows as
+unknown (`a?`). The user dispatches work by it; work sessions never see it.
+
 **Dependencies.** "A depends on B" means A shouldn't start until B is done or
 cancelled. Until then, A and all of A's subtasks are **blocked**. Dependencies
 never prevent a status change; they only affect what `ergon ls` offers. Use
@@ -100,6 +108,13 @@ conversation. So every intent must stand on its own in terms of meaning. Context
 that applies to a whole subtree belongs in the intent of that subtree's top
 task.
 
+## FAQ
+
+**Should I merge two or more tasks into one, or keep them separate?**
+That's the canonical time to use subtasks: make them subtasks of one task.
+Because intents are hierarchical, a subtask is both a task in its own right
+and a bullet point of its parent's intent.
+
 ## Rules ergon enforces
 
 ergon refuses changes that would break these. If a command is refused, read
@@ -110,18 +125,21 @@ the error, then adjust or ask the user.
 ```
 ergon tree [<slug>]
     The task tree, with slug, status and priority for each task, and size
-    once any task has one.
+    and attention once any task has one.
 ergon show <slug>
     One task in full: intent, status, priority, blocked or not,
     dependencies and dependents, subtask titles, and the command to
     delete it.
 ergon ls
     Work that's ready to start.
+ergon prompt root
+    These instructions and the project's root intent, as they are now. Run
+    it if your context was compacted and you've lost them.
 
-ergon add <intent> [--parent <slug>] [--status <status>] [--priority <pN>] [--size <N>]
+ergon add <intent> [--parent <slug>] [--status <status>] [--priority <pN>] [--size <N>] [--attention <1-10>]
     Create a task (under the root by default) and print its slug.
-ergon edit <slug> [--intent <text>] [--status <status>|none] [--priority <pN>|none] [--size <N>|none]
-    Change a task. `none` unsets the status, priority or size.
+ergon edit <slug> [--intent <text>] [--status <status>|none] [--priority <pN>|none] [--size <N>|none] [--attention <1-10>|none]
+    Change a task. `none` unsets the status, priority, size or attention.
 ergon mv <slug> <new-parent-slug>
     Move a task, with its subtree, under a different parent.
 ergon rm <slug> --subtasks <N> --dependents <M>

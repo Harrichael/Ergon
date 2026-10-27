@@ -114,11 +114,7 @@ pub fn work(conn: &mut Connection, project: &Project, slug: &str, cwd: &Path) ->
     Tasks::load(&tx, project)?.validate().context("refused")?;
     tx.commit()?;
 
-    let prompt = if task.is_root() {
-        planner_prompt(&tasks)
-    } else {
-        work_prompt(&tasks, task.id)
-    };
+    let prompt = prompt(&tasks, task.id);
     Ok(Launch {
         program,
         cwd: cwd.to_path_buf(),
@@ -127,7 +123,18 @@ pub fn work(conn: &mut Connection, project: &Project, slug: &str, cwd: &Path) ->
     })
 }
 
-pub fn planner_prompt(tasks: &Tasks) -> String {
+/// The prompt a task's session starts with: the planner's for the root,
+/// otherwise the work session's. Rendered from the tasks as they are now, so
+/// a session that lost it, to compaction say, gets back an up-to-date copy.
+pub fn prompt(tasks: &Tasks, id: i64) -> String {
+    if tasks.get(id).is_root() {
+        planner_prompt(tasks)
+    } else {
+        work_prompt(tasks, id)
+    }
+}
+
+fn planner_prompt(tasks: &Tasks) -> String {
     let root = tasks.root();
     format!(
         "{PLANNER_DOC}\n\n## This project\n\nProject: {}\n\nRoot intent:\n\n{}\n\n\
@@ -172,7 +179,7 @@ struct Outlined<'a> {
     marker: Option<Status>,
 }
 
-pub fn work_prompt(tasks: &Tasks, id: i64) -> String {
+fn work_prompt(tasks: &Tasks, id: i64) -> String {
     let ancestors: Vec<Outlined> = tasks
         .ancestors(id)
         .into_iter()
@@ -249,7 +256,7 @@ mod tests {
         )
         .unwrap();
         let add = |conn: &mut Connection, parent: Option<&str>, intent: &str| {
-            ops::add(conn, &p, parent, intent, None, None, None).unwrap()
+            ops::add(conn, &p, parent, intent, Default::default()).unwrap()
         };
         let a = add(&mut conn, None, "Backend");
         let b = add(&mut conn, Some(&a), "Write the API\nUse REST.");

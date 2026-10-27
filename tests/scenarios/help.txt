@@ -26,7 +26,7 @@ Commands:
   init     Create a project and its root task, write .ergon here, and launch the planner session
   project  Manage projects
   add      Create a task and print its slug
-  edit     Change a task's intent, status, priority or size
+  edit     Change a task's intent, status, priority, size or attention
   rm       Delete a task and its subtree. The counts must match `show`
   restore  Undo a deletion
   mv       Move a task, with its subtree, under a new parent
@@ -38,6 +38,7 @@ Commands:
   export   Print projects in full as JSON, for backups or another database
   import   Add the projects in an export (a file, or stdin) to this database
   work     Start or resume the Claude Code session for a task
+  prompt   Print the prompt `ergon work` starts a task's session with
   help     Print help for ergon or a command; `ergon help planner` prints the planner's instructions
 
 Options:

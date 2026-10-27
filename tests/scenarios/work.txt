@@ -161,3 +161,36 @@ Root intent:
 Second project
 
 Ask the user how they'd like to start planning.
+
+# prompt prints a session's prompt as it would be now, and changes nothing.
+$ ergon edit root --intent "Second project\n\nNow with context."
+$ ergon prompt root
+# You are the planner for an ergon project
+...
+## This project
+
+Project: second
+
+Root intent:
+
+Second project
+
+Now with context.
+
+Ask the user how they'd like to start planning.
+$ ergon add Docs
+qxpj
+$ ergon prompt qxpj
+Greater context that your work sits within:
+
+- Second project
+
+Task to complete here (second/qxpj):
+
+Docs
+
+Ask the user how they'd like to start.
+$ ergon show qxpj
+...
+status:    todo
+...

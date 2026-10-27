@@ -1,15 +1,17 @@
 //! Values computed from a project snapshot: blocked, effective priority,
-//! sizes, and the `ls` selection.
+//! sizes, attention, and the `ls` selection.
 
 use std::collections::{HashMap, HashSet, VecDeque};
 
 use crate::task::{Status, Tasks};
 
-/// Blocked state, effective priority and size of every live task.
+/// Blocked state, effective priority, size and attention of every live task.
 pub struct Derived {
     blocked: HashSet<i64>,
     priority: HashMap<i64, Option<u8>>,
     size: HashMap<i64, Size>,
+    attention: HashMap<i64, Option<u8>>,
+    rated: bool,
 }
 
 /// A task's size: its own, or the sum of the sized tasks under it.
@@ -68,10 +70,18 @@ impl Derived {
         let mut size = HashMap::new();
         compute_size(tasks, root, &mut size);
 
+        let mut attention = HashMap::new();
+        compute_attention(tasks, root, None, &mut attention);
+        let rated = attention
+            .keys()
+            .any(|&id| tasks.get(id).attention.is_some());
+
         Derived {
             blocked,
             priority,
             size,
+            attention,
+            rated,
         }
     }
 
@@ -93,6 +103,47 @@ impl Derived {
     pub fn sized(&self) -> bool {
         !self.size.is_empty()
     }
+
+    /// `None` when unknown.
+    pub fn attention(&self, id: i64) -> Option<u8> {
+        self.attention.get(&id).copied().flatten()
+    }
+
+    /// Whether any task has an attention, which is when views show them.
+    pub fn rated(&self) -> bool {
+        self.rated
+    }
+}
+
+/// A task's attention is its own, else its parent's, raised to the highest
+/// among its children that aren't done or cancelled. With none of its own or
+/// from above, it's unknown unless it has such children and all are known:
+/// one unknown subtask makes an unrated parent unknown too.
+fn compute_attention(
+    tasks: &Tasks,
+    id: i64,
+    inherited: Option<u8>,
+    out: &mut HashMap<i64, Option<u8>>,
+) -> Option<u8> {
+    let own = tasks.get(id).attention.or(inherited);
+    let mut highest = own;
+    let (mut open, mut unknown) = (false, false);
+    for c in tasks.children(id) {
+        let child = compute_attention(tasks, c.id, own, out);
+        if tasks.effective_status(c.id).is_closed() {
+            continue;
+        }
+        open = true;
+        unknown |= child.is_none();
+        highest = highest.max(child);
+    }
+    let attention = if own.is_none() && (!open || unknown) {
+        None
+    } else {
+        highest
+    };
+    out.insert(id, attention);
+    attention
 }
 
 /// A sized task counts its own size and nothing under it. An unsized one adds
@@ -273,7 +324,7 @@ fn visit(tasks: &Tasks, derived: &Derived, id: i64, out: &mut Vec<i64>) {
 mod tests {
     use super::*;
     use crate::db;
-    use crate::ops::{self, Changes};
+    use crate::ops::{self, Changes, Fields};
     use crate::project::{self, Project};
     use crate::task::Status;
     use rusqlite::Connection;
@@ -297,29 +348,19 @@ mod tests {
         }
 
         fn add(&mut self, parent: Option<&str>, priority: Option<u8>) -> String {
-            ops::add(
-                &mut self.conn,
-                &self.project,
-                parent,
-                "Task",
-                None,
+            let fields = Fields {
                 priority,
-                None,
-            )
-            .unwrap()
+                ..Default::default()
+            };
+            ops::add(&mut self.conn, &self.project, parent, "Task", fields).unwrap()
         }
 
         fn sized(&mut self, parent: Option<&str>, size: u32) -> String {
-            ops::add(
-                &mut self.conn,
-                &self.project,
-                parent,
-                "Task",
-                None,
-                None,
-                Some(size),
-            )
-            .unwrap()
+            let fields = Fields {
+                size: Some(size),
+                ..Default::default()
+            };
+            ops::add(&mut self.conn, &self.project, parent, "Task", fields).unwrap()
         }
 
         /// `left/total`, with `+` when partial and `*` when stored.
@@ -346,6 +387,19 @@ mod tests {
                 ..Default::default()
             };
             ops::edit(&mut self.conn, &self.project, t, changes).unwrap();
+        }
+
+        fn rate(&mut self, t: &str, attention: u8) {
+            let changes = Changes {
+                attention: Some(Some(attention)),
+                ..Default::default()
+            };
+            ops::edit(&mut self.conn, &self.project, t, changes).unwrap();
+        }
+
+        fn attention(&self, slug: &str) -> Option<u8> {
+            let (tasks, d) = self.eval();
+            d.attention(tasks.live(slug).unwrap().id)
         }
 
         fn eval(&self) -> (Tasks, Derived) {
@@ -447,6 +501,49 @@ mod tests {
             f.size(&f.eval().0.root().slug.clone()).as_deref(),
             Some("0/13")
         );
+    }
+
+    /// Attention passes down to unrated subtasks and up as the highest of the
+    /// open work below. An unrated task is unknown while anything open under
+    /// it is; a rated one never is. Done and cancelled work keeps its own
+    /// rating but stops raising its parent's.
+    #[test]
+    fn attention_passes_down_and_the_highest_goes_up() {
+        let mut f = Fixture::new();
+        let root = f.eval().0.root().slug.clone();
+        let epic = f.add(None, None);
+        let api = f.add(Some(&epic), None);
+        let ui = f.add(Some(&epic), None);
+        let ui_step = f.add(Some(&ui), None);
+        f.rate(&api, 3);
+        assert_eq!(f.attention(&epic), None, "ui is unrated");
+        assert_eq!(f.attention(&root), None);
+
+        f.rate(&ui, 2);
+        assert_eq!(f.attention(&ui_step), Some(2), "inherited");
+        assert_eq!(f.attention(&epic), Some(3));
+        assert_eq!(f.attention(&root), Some(3));
+
+        let choice = f.add(Some(&api), None);
+        assert_eq!(f.attention(&choice), Some(3), "inherited");
+        f.rate(&choice, 9);
+        assert_eq!(f.attention(&api), Some(9), "raised from its own 3");
+        assert_eq!(f.attention(&epic), Some(9));
+
+        f.status(&choice, Status::Done);
+        assert_eq!(f.attention(&choice), Some(9), "keeps its own");
+        assert_eq!(f.attention(&api), Some(3));
+
+        let unrated = f.add(Some(&epic), None);
+        assert_eq!(f.attention(&epic), None);
+        f.status(&unrated, Status::Cancelled);
+        assert_eq!(f.attention(&epic), Some(3));
+        f.status(&epic, Status::Done);
+        assert_eq!(f.attention(&epic), None, "nothing open under it");
+
+        f.rate(&root, 1);
+        assert_eq!(f.attention(&root), Some(1), "rated, so not unknown");
+        assert_eq!(f.attention(&epic), Some(1), "inherited");
     }
 
     #[test]

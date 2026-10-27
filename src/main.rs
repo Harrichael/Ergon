@@ -53,8 +53,12 @@ enum Command {
         /// are steps, and no task above or below it can have a size.
         #[arg(long, value_parser = parse_size)]
         size: Option<u32>,
+        /// How much the task needs you: 1 (just execute), 5 (steering
+        /// recommended) to 10 (your decision).
+        #[arg(long, value_parser = parse_attention)]
+        attention: Option<u8>,
     },
-    /// Change a task's intent, status, priority or size.
+    /// Change a task's intent, status, priority, size or attention.
     Edit {
         task: TaskRef,
         #[arg(long)]
@@ -68,6 +72,9 @@ enum Command {
         /// A Fibonacci number, or `none` to add it up from the subtasks.
         #[arg(long, value_parser = parse_size_or_none)]
         size: Option<OrNone<u32>>,
+        /// 1 to 10, or `none` for unknown.
+        #[arg(long, value_parser = parse_attention_or_none)]
+        attention: Option<OrNone<u8>>,
     },
     /// Delete a task and its subtree. The counts must match `show`.
     Rm {
@@ -149,6 +156,11 @@ enum Command {
     Import { file: Option<std::path::PathBuf> },
     /// Start or resume the Claude Code session for a task.
     Work { task: TaskRef },
+    /// Print the prompt `ergon work` starts a task's session with
+    ///
+    /// Rendered from the tasks as they are now, not as they were when the
+    /// session started. Changes nothing.
+    Prompt { task: TaskRef },
     /// Print help for ergon or a command; `ergon help planner` prints the
     /// planner's instructions.
     Help { topic: Option<String> },
@@ -199,6 +211,18 @@ fn parse_size_or_none(s: &str) -> Result<OrNone<u32>, String> {
         Ok(OrNone(None))
     } else {
         parse_size(s).map(|v| OrNone(Some(v)))
+    }
+}
+
+fn parse_attention(s: &str) -> Result<u8, String> {
+    task::parse_attention(s).map_err(|e| e.to_string())
+}
+
+fn parse_attention_or_none(s: &str) -> Result<OrNone<u8>, String> {
+    if s == "none" {
+        Ok(OrNone(None))
+    } else {
+        parse_attention(s).map(|v| OrNone(Some(v)))
     }
 }
 
@@ -255,12 +279,24 @@ fn run(cli: Cli) -> Result<()> {
             status,
             priority,
             size,
+            attention,
         } => {
             let p = project_for(&conn, &parent.iter().collect::<Vec<_>>())?;
             let parent = parent.as_ref().map(|r| r.slug.as_str());
             println!(
                 "{}",
-                ops::add(&mut conn, &p, parent, &intent, status, priority, size)?
+                ops::add(
+                    &mut conn,
+                    &p,
+                    parent,
+                    &intent,
+                    ops::Fields {
+                        status,
+                        priority,
+                        size,
+                        attention,
+                    }
+                )?
             );
         }
         Command::Edit {
@@ -269,6 +305,7 @@ fn run(cli: Cli) -> Result<()> {
             status,
             priority,
             size,
+            attention,
         } => {
             let p = project_for(&conn, &[&task])?;
             let changes = Changes {
@@ -276,6 +313,7 @@ fn run(cli: Cli) -> Result<()> {
                 status: status.map(|s| s.0),
                 priority: priority.map(|p| p.0),
                 size: size.map(|s| s.0),
+                attention: attention.map(|a| a.0),
             };
             for r in ops::edit(&mut conn, &p, &task.slug, changes)? {
                 println!("Also cancelled {r}");
@@ -372,6 +410,11 @@ fn run(cli: Cli) -> Result<()> {
         Command::Work { task } => {
             let p = project_for(&conn, &[&task])?;
             launch(claude::work(&mut conn, &p, &task.slug, &cwd)?)?;
+        }
+        Command::Prompt { task } => {
+            let p = project_for(&conn, &[&task])?;
+            let tasks = Tasks::load(&conn, &p)?;
+            print!("{}", claude::prompt(&tasks, tasks.live(&task.slug)?.id));
         }
         Command::Help { .. } => unreachable!("handled above"),
         Command::Dep(DepCommand::Add { task, depends_on }) => {

@@ -65,6 +65,7 @@ CREATE TABLE tasks (
   status         TEXT CHECK (status IN ('todo','in_progress','landing','done','cancelled')),
   priority       INTEGER CHECK (priority BETWEEN 0 AND 4),
   size           INTEGER CHECK (size > 0),               -- a Fibonacci number
+  attention      INTEGER CHECK (attention BETWEEN 1 AND 10),
   claude_session TEXT,
   claude_cwd     TEXT,
   created_at     INTEGER NOT NULL,
@@ -177,6 +178,26 @@ size, in bold, and for a computed one, in cyan, the total when nothing is
 done (`13`) or `left/total` (`8/13`), with `+` when partial. `show` spells
 it out, or names the sized task a step belongs to.
 
+## Attention
+
+Attention is how much a task needs the user, from 1 to 10, stored on a task
+or NULL: 1 is "just execute", 5 is "steering recommended", and 10 is "human
+decision". It blends every reason for involving the user into one number, and
+the gradient lets the user see where agents' choices held up and where they
+didn't. It's informative only: nothing sorts or filters by it, and work
+sessions don't see it.
+
+A task's effective attention is its own, else its parent's effective own
+(passed down), raised to the highest effective attention among its children
+that aren't closed. A task with no attention of its own or from above is
+**unknown** if it has no children that aren't closed, or if any of them is
+unknown. So unknown spreads up through unrated tasks and stops at a rated
+one. Closed tasks keep their own attention but don't raise their parent's.
+
+Views show attention only once some task in the project has one: `a7`, bold
+when stored and cyan when inherited or raised, and a dimmed `a?` when
+unknown. `show` says which.
+
 ## Blocked
 
 A task is **blocked** if any task it depends on has an effective status that
@@ -196,8 +217,8 @@ For example: P has children A and B. If both are unblocked, `ls` shows P. If B
 is blocked, `ls` shows A.
 
 Results are sorted by effective priority, then oldest first. Each row shows:
-slug, effective priority, effective status, size (once any task has one),
-title, and, below the top level, a dimmed `(in: <parent title>)`.
+slug, effective priority, effective status, size and attention (once any
+task has one), title, and, below the top level, a dimmed `(in: <parent title>)`.
 
 ## Invariants
 
@@ -227,7 +248,7 @@ ergon refuses any change (add, edit, move, restore) that would break these.
 8. **Sizes don't nest.** No sized task has a sized ancestor among live tasks.
    The refusal names both tasks and the command to unsize either.
 
-A task's updated time changes when the task's own intent, status, priority, size, or session
+A task's updated time changes when the task's own intent, status, priority, size, attention, or session
 changes. Changes to its children or dependencies don't count.
 
 ## Deletion
@@ -305,20 +326,21 @@ ergon project rename <old> <new>
 ergon project retire <name>
 ergon project unretire <name>
 
-ergon add <intent> [--parent <ref>] [--status <status>] [--priority <pN>] [--size <N>]
+ergon add <intent> [--parent <ref>] [--status <status>] [--priority <pN>] [--size <N>] [--attention <1-10>]
     Create a task (under the root by default) and print its slug.
-ergon edit <ref> [--intent <text>] [--status <status>|none] [--priority <pN>|none] [--size <N>|none]
+ergon edit <ref> [--intent <text>] [--status <status>|none] [--priority <pN>|none] [--size <N>|none] [--attention <1-10>|none]
 ergon mv <ref> <new-parent-ref>
 ergon rm <ref> --subtasks <N> --dependents <M>
 ergon restore <ref>
 
 ergon show <ref> [--intent]
-    With --intent, just the intent. Otherwise: full intent; stored and effective status and priority; size; whether it's
+    With --intent, just the intent. Otherwise: full intent; stored and effective status and priority; size; attention; whether it's
     blocked; dependencies and dependents; session; timestamps; the
     children's titles as a bullet list; and the exact `ergon rm` command,
     with the subtask and dependent counts it requires.
 ergon tree [<ref>]
-    Indented titles with slug, effective status, effective priority, and size.
+    Indented titles with slug, effective status, effective priority, size, and
+    attention.
 ergon ls
 ergon outline [--json]
 ergon outline --apply [--dry-run]
@@ -334,6 +356,10 @@ ergon export
 ergon import [<file>]
 
 ergon work <ref>
+ergon prompt <ref>
+    Print the prompt `ergon work` starts the task's session with, rendered
+    from the tasks as they are now. A session whose context was compacted
+    can get its instructions back this way.
 ergon help planner
     Print planner.md, the planner's instructions.
 ```

@@ -31,6 +31,15 @@ fn next_position(conn: &Connection, parent: i64) -> Result<i64> {
     )?)
 }
 
+/// A new task's stored fields besides its intent; each may be left unset.
+#[derive(Debug, Default)]
+pub struct Fields {
+    pub status: Option<Status>,
+    pub priority: Option<u8>,
+    pub size: Option<u32>,
+    pub attention: Option<u8>,
+}
+
 /// Creates a task and returns its slug. The parent defaults to the root, and
 /// a direct child of the root defaults to `todo`.
 pub fn add(
@@ -38,10 +47,14 @@ pub fn add(
     project: &Project,
     parent: Option<&str>,
     intent: &str,
-    status: Option<Status>,
-    priority: Option<u8>,
-    size: Option<u32>,
+    fields: Fields,
 ) -> Result<String> {
+    let Fields {
+        status,
+        priority,
+        size,
+        attention,
+    } = fields;
     let intent = clean_intent(intent)?;
     let tx = conn.transaction()?;
     let tasks = Tasks::load(&tx, project)?;
@@ -57,22 +70,23 @@ pub fn add(
         .context("couldn't find an unused slug")?;
     let now = crate::now();
     tx.execute(
-        "INSERT INTO tasks (project_id, slug, parent_id, intent, status, priority, size, created_at, updated_at, position)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?8, ?9)",
-        params![project.id, slug, parent.id, intent, status, priority, size, now, next_position(&tx, parent.id)?],
+        "INSERT INTO tasks (project_id, slug, parent_id, intent, status, priority, size, attention, created_at, updated_at, position)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?9, ?10)",
+        params![project.id, slug, parent.id, intent, status, priority, size, attention, now, next_position(&tx, parent.id)?],
     )?;
     commit_valid(tx, project)?;
     Ok(slug)
 }
 
-/// Fields to change; `None` leaves a field as it is. For status, priority and
-/// size, `Some(None)` unsets the field.
+/// Fields to change; `None` leaves a field as it is. For status, priority,
+/// size and attention, `Some(None)` unsets the field.
 #[derive(Debug, Default)]
 pub struct Changes {
     pub intent: Option<String>,
     pub status: Option<Option<Status>>,
     pub priority: Option<Option<u8>>,
     pub size: Option<Option<u32>>,
+    pub attention: Option<Option<u8>>,
 }
 
 /// Applies `changes` to a task. Cancelling a task cancels its descendants
@@ -87,8 +101,9 @@ pub fn edit(
         && changes.status.is_none()
         && changes.priority.is_none()
         && changes.size.is_none()
+        && changes.attention.is_none()
     {
-        bail!("nothing to change: pass --intent, --status, --priority or --size");
+        bail!("nothing to change: pass --intent, --status, --priority, --size or --attention");
     }
     let tx = conn.transaction()?;
     let tasks = Tasks::load(&tx, project)?;
@@ -101,15 +116,25 @@ pub fn edit(
     let status = changes.status.unwrap_or(task.status);
     let priority = changes.priority.unwrap_or(task.priority);
     let size = changes.size.unwrap_or(task.size);
-    if (&intent, status, priority, size) == (&task.intent, task.status, task.priority, task.size) {
+    let attention = changes.attention.unwrap_or(task.attention);
+    if (&intent, status, priority, size, attention)
+        == (
+            &task.intent,
+            task.status,
+            task.priority,
+            task.size,
+            task.attention,
+        )
+    {
         return Ok(Vec::new());
     }
 
     let now = crate::now();
     tx.execute(
-        "UPDATE tasks SET intent = ?1, status = ?2, priority = ?3, size = ?4, updated_at = ?5
-         WHERE id = ?6",
-        params![intent, status, priority, size, now, task.id],
+        "UPDATE tasks SET intent = ?1, status = ?2, priority = ?3, size = ?4, attention = ?5,
+           updated_at = ?6
+         WHERE id = ?7",
+        params![intent, status, priority, size, attention, now, task.id],
     )?;
 
     let mut cancelled = Vec::new();
@@ -300,16 +325,11 @@ mod tests {
         }
 
         fn add(&mut self, parent: Option<&str>, status: Option<Status>) -> String {
-            add(
-                &mut self.conn,
-                &self.project,
-                parent,
-                "Task",
+            let fields = Fields {
                 status,
-                None,
-                None,
-            )
-            .unwrap()
+                ..Default::default()
+            };
+            add(&mut self.conn, &self.project, parent, "Task", fields).unwrap()
         }
 
         fn set(&mut self, slug: &str, status: Option<Status>) -> Result<Vec<String>> {
@@ -353,6 +373,10 @@ mod tests {
     #[test]
     fn sized_tasks_never_nest() {
         let mut f = Fixture::new();
+        let sized = |n| Fields {
+            size: Some(n),
+            ..Default::default()
+        };
         let size = |f: &mut Fixture, t: &str, n: Option<u32>| {
             let changes = Changes {
                 size: Some(n),
@@ -360,9 +384,9 @@ mod tests {
             };
             edit(&mut f.conn, &f.project, t, changes)
         };
-        let unit = add(&mut f.conn, &f.project, None, "Unit", None, None, Some(5)).unwrap();
+        let unit = add(&mut f.conn, &f.project, None, "Unit", sized(5)).unwrap();
         let step = f.add(Some(&unit), None);
-        let other = add(&mut f.conn, &f.project, None, "Other", None, None, Some(3)).unwrap();
+        let other = add(&mut f.conn, &f.project, None, "Other", sized(3)).unwrap();
 
         let err = size(&mut f, &step, Some(2)).unwrap_err();
         assert!(format!("{err:#}").contains(&format!("ergon edit p/{unit} --size none")));
@@ -385,7 +409,7 @@ mod tests {
         let a = f.add(None, None);
         let dir = tempfile::tempdir().unwrap();
         let other = project::init(&mut f.conn, "q", "Other", dir.path()).unwrap();
-        let x = add(&mut f.conn, &other, None, "x", None, None, None).unwrap();
+        let x = add(&mut f.conn, &other, None, "x", Fields::default()).unwrap();
         // Slugs resolve within the given project, so the other project's task
         // isn't reachable.
         assert!(dep(&mut f, &a, &x).is_err());

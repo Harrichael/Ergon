@@ -10,11 +10,12 @@ use serde::{Deserialize, Serialize};
 
 use crate::project::{self, Project};
 use crate::slug;
-use crate::task::{Status, Tasks, parse_size};
+use crate::task::{Status, Tasks, parse_attention, parse_size};
 
 /// The format this ergon writes and the newest it reads. Format 2 added
-/// sizes; an older ergon would drop them, so it must refuse the export.
-const FORMAT: u32 = 2;
+/// sizes and format 3 attention; an older ergon would drop them, so it must
+/// refuse the export.
+const FORMAT: u32 = 3;
 
 #[derive(Serialize, Deserialize)]
 struct Export {
@@ -48,6 +49,8 @@ struct TaskData {
     priority: Option<u8>,
     #[serde(default)]
     size: Option<u32>,
+    #[serde(default)]
+    attention: Option<u8>,
     claude_session: Option<String>,
     claude_cwd: Option<String>,
     created_at: i64,
@@ -89,6 +92,7 @@ pub fn export(conn: &Connection, projects: &[Project]) -> Result<String> {
                     status: t.status,
                     priority: t.priority,
                     size: t.size,
+                    attention: t.attention,
                     claude_session: t.claude_session.clone(),
                     claude_cwd: t.claude_cwd.clone(),
                     created_at: t.created_at,
@@ -149,6 +153,9 @@ fn import_project(conn: &Connection, p: &ProjectData) -> Result<()> {
         if let Some(n) = t.size {
             parse_size(&n.to_string()).with_context(|| format!("task {}", t.slug))?;
         }
+        if let Some(n) = t.attention {
+            parse_attention(&n.to_string()).with_context(|| format!("task {}", t.slug))?;
+        }
     }
     match p.tasks.iter().filter(|t| t.parent.is_none()).count() {
         1 => {}
@@ -190,8 +197,9 @@ fn import_project(conn: &Connection, p: &ProjectData) -> Result<()> {
     for t in &p.tasks {
         conn.execute(
             "INSERT INTO tasks (id, project_id, slug, parent_id, intent, status, priority,
-               claude_session, claude_cwd, created_at, updated_at, deleted_at, position, size)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
+               claude_session, claude_cwd, created_at, updated_at, deleted_at, position, size,
+               attention)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)",
             params![
                 ids[t.slug.as_str()],
                 project_id,
@@ -206,7 +214,8 @@ fn import_project(conn: &Connection, p: &ProjectData) -> Result<()> {
                 t.updated_at,
                 t.deleted_at,
                 t.position,
-                t.size
+                t.size,
+                t.attention
             ],
         )
         .with_context(|| format!("adding task {}", t.slug))?;
@@ -229,7 +238,8 @@ fn import_project(conn: &Connection, p: &ProjectData) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{db, ops};
+    use crate::db;
+    use crate::ops::{self, Fields};
 
     fn all(conn: &Connection) -> Vec<Project> {
         project::list(conn, true).unwrap()
@@ -240,20 +250,51 @@ mod tests {
         let mut conn = db::open_in_memory().unwrap();
         let dir = tempfile::tempdir().unwrap();
         let p = project::init(&mut conn, "alpha", "Alpha\n\nContext.", dir.path()).unwrap();
-        let a = ops::add(&mut conn, &p, None, "A", None, Some(1), None).unwrap();
+        let a = ops::add(
+            &mut conn,
+            &p,
+            None,
+            "A",
+            Fields {
+                priority: Some(1),
+                ..Default::default()
+            },
+        )
+        .unwrap();
         let b = ops::add(
             &mut conn,
             &p,
             Some(&a),
             "B",
-            Some(Status::InProgress),
-            None,
-            None,
+            Fields {
+                status: Some(Status::InProgress),
+                ..Default::default()
+            },
         )
         .unwrap();
-        let c = ops::add(&mut conn, &p, None, "C", None, None, None).unwrap();
-        let d = ops::add(&mut conn, &p, Some(&c), "D", None, None, None).unwrap();
-        let e = ops::add(&mut conn, &p, None, "E", None, None, Some(3)).unwrap();
+        let c = ops::add(
+            &mut conn,
+            &p,
+            None,
+            "C",
+            Fields {
+                attention: Some(7),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        let d = ops::add(&mut conn, &p, Some(&c), "D", Fields::default()).unwrap();
+        let e = ops::add(
+            &mut conn,
+            &p,
+            None,
+            "E",
+            Fields {
+                size: Some(3),
+                ..Default::default()
+            },
+        )
+        .unwrap();
         ops::dep_add(&mut conn, &p, &c, &e).unwrap();
         ops::rm(&mut conn, &p, &d, 0, 0).unwrap();
         // A child created before its parent: import must still order them.
@@ -277,7 +318,7 @@ mod tests {
     #[test]
     fn refuses_bad_exports_entirely() {
         let mut conn = db::open_in_memory().unwrap();
-        let newer = r#"{"format": 3, "projects": []}"#;
+        let newer = r#"{"format": 4, "projects": []}"#;
         let err = import(&mut conn, newer).unwrap_err().to_string();
         assert!(err.contains("newer than this ergon reads"), "{err}");
 

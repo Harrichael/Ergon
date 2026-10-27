@@ -48,6 +48,31 @@ fn size_width(derived: &Derived, ids: impl IntoIterator<Item = i64>) -> usize {
         .unwrap_or(1)
 }
 
+/// The attention column, `a7`: bold if stored, cyan if inherited or raised
+/// by subtasks, and a dimmed `a?` when unknown. Views show it only once some
+/// task in the project has an attention.
+fn attention(tasks: &Tasks, derived: &Derived, id: i64) -> String {
+    match derived.attention(id) {
+        None => format!("{DIM}{:<3}{DIM:#}", "a?"),
+        Some(a) => {
+            let style = if tasks.get(id).attention == Some(a) {
+                STORED
+            } else {
+                INFERRED
+            };
+            format!("{style}{:<3}{style:#}", format!("a{a}"))
+        }
+    }
+}
+
+fn attention_column(tasks: &Tasks, derived: &Derived, id: i64) -> String {
+    if derived.rated() {
+        format!("{}  ", attention(tasks, derived, id))
+    } else {
+        String::new()
+    }
+}
+
 fn status(tasks: &Tasks, id: i64) -> String {
     format!("{:<11}", tasks.effective_status(id).as_str())
 }
@@ -92,6 +117,15 @@ pub fn show(tasks: &Tasks, derived: &Derived, id: i64, now: i64) -> String {
             },
         };
         let _ = writeln!(out, "size:      {line}");
+    }
+    if derived.rated() {
+        let line = match (t.attention, derived.attention(id)) {
+            (_, None) => "? (unknown)".to_string(),
+            (Some(s), Some(e)) if s == e => e.to_string(),
+            (Some(s), Some(e)) => format!("{e} (raised from stored {s} by subtasks)"),
+            (None, Some(e)) => format!("{e} (inferred)"),
+        };
+        let _ = writeln!(out, "attention: {line}");
     }
 
     let waiting_on = derived::blocked_by(tasks, id);
@@ -176,11 +210,12 @@ fn write_tree(
     let size = width.map_or(String::new(), |w| format!("{}  ", size(derived, id, w)));
     let _ = writeln!(
         out,
-        "{}{}  {}  {}  {size}{}{blocked}",
+        "{}{}  {}  {}  {size}{}{}{blocked}",
         "  ".repeat(depth),
         t.slug,
         status(tasks, id),
         priority(tasks, derived, id),
+        attention_column(tasks, derived, id),
         t.title()
     );
     for c in tasks.children(id) {
@@ -204,10 +239,11 @@ pub fn ls(tasks: &Tasks, derived: &Derived) -> String {
         let size = width.map_or(String::new(), |w| format!("{}  ", size(derived, id, w)));
         let _ = writeln!(
             out,
-            "{}  {}  {}  {size}{}{context}",
+            "{}  {}  {}  {size}{}{}{context}",
             t.slug,
             priority(tasks, derived, id),
             status(tasks, id),
+            attention_column(tasks, derived, id),
             t.title()
         );
     }
