@@ -206,6 +206,10 @@ enum Command {
     /// Tasks given as `slug,slug,...` are taken on together, in one session
     /// that every one of them records. Once they have it, `ergon work` on any
     /// of them resumes it.
+    ///
+    /// The session resumes only from the folder it began in. In a choros
+    /// space, don't start it inside a workspace that may be archived
+    /// (`choros land archive` or `choros archive` moves it).
     #[command(group(clap::ArgGroup::new("which").required(true).args(["tasks", "interactive"])))]
     Work {
         /// Comma-separated, or `-` to read them from stdin, as in
