@@ -131,8 +131,9 @@ ergon show <slug>
     One task in full: intent, status, priority, blocked or not,
     dependencies and dependents, subtask titles, and the command to
     delete it.
-ergon ls
-    Work that's ready to start.
+ergon ls [--subtasks]
+    Work that's ready to start. --subtasks lists each task's subtasks
+    under it.
 ergon prompt root
     These instructions and the project's root intent, as they are now. Run
     it if your context was compacted and you've lost them.

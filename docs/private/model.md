@@ -385,7 +385,8 @@ ergon tree [<ref>] [--ls]
     Indented titles with slug, effective status, effective priority, size, and
     attention. --ls marks the tasks `ergon ls` lists with a ▸ gutter and a
     bold title.
-ergon ls [--sort FIELD [asc|desc]]
+ergon ls [--sort FIELD [asc|desc]] [--subtasks]
+    --subtasks follows each row with its subtasks, indented, in tree order.
 ergon outline [--json]
 ergon outline --apply [--dry-run]
 ergon outline --format

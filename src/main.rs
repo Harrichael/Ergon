@@ -113,6 +113,9 @@ enum Command {
         /// A field, then optionally asc or desc: `--sort attention desc`.
         #[arg(long, num_args = 1..=2, value_names = ["FIELD", "ORDER"])]
         sort: Option<Vec<String>>,
+        /// Show each task's subtasks under it, indented.
+        #[arg(long)]
+        subtasks: bool,
     },
     /// Print the project as an editable table, or apply an edited one
     ///
@@ -377,7 +380,7 @@ fn run(cli: Cli) -> Result<()> {
             let p = project_for(&conn, &task.iter().collect::<Vec<_>>())?;
             print!("{}", tree(&conn, &p, task.as_ref(), ls)?);
         }
-        Command::Ls { sort } => {
+        Command::Ls { sort, subtasks } => {
             let sort = match sort.as_deref() {
                 None => Default::default(),
                 Some([field, order @ ..]) => {
@@ -386,7 +389,7 @@ fn run(cli: Cli) -> Result<()> {
                 Some([]) => unreachable!("clap requires a field"),
             };
             let tasks = Tasks::load(&conn, &project_for(&conn, &[])?)?;
-            print!("{}", view::ls(&tasks, &Derived::compute(&tasks), sort));
+            print!("{}", view::ls(&tasks, &Derived::compute(&tasks), sort, subtasks));
         }
         Command::Outline {
             apply: true,

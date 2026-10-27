@@ -231,12 +231,58 @@ fn write_tree(row: &Row, id: i64, depth: usize, out: &mut String) {
     }
 }
 
-/// `ergon ls`: one row per task ready to start.
-pub fn ls(tasks: &Tasks, derived: &Derived, sort: Sort) -> String {
-    ls_rows(tasks, derived, sort)
-        .into_iter()
-        .map(|(_, row)| row + "\n")
-        .collect()
+/// `ergon ls`: one row per task ready to start, each followed by its
+/// subtasks, indented, when `subtasks` is set.
+pub fn ls(tasks: &Tasks, derived: &Derived, sort: Sort, subtasks: bool) -> String {
+    let ids = derived::ls(tasks, derived, sort);
+    let shown = |id: i64| {
+        let below = if subtasks { tasks.descendants(id) } else { Vec::new() };
+        std::iter::once(id).chain(below)
+    };
+    let width = derived
+        .sized()
+        .then(|| size_width(derived, ids.iter().flat_map(|&id| shown(id))));
+    let mut out = String::new();
+    for id in ids {
+        out += &ls_row(tasks, derived, id, width);
+        out.push('\n');
+        if subtasks {
+            for c in tasks.children(id) {
+                write_ls_subtask(tasks, derived, c.id, 1, width, &mut out);
+            }
+        }
+    }
+    out
+}
+
+fn write_ls_subtask(
+    tasks: &Tasks,
+    derived: &Derived,
+    id: i64,
+    depth: usize,
+    width: Option<usize>,
+    out: &mut String,
+) {
+    let t = tasks.get(id);
+    let size = width.map_or(String::new(), |w| format!("{}  ", size(derived, id, w)));
+    let blocked = if derived.is_blocked(id) {
+        format!("  {DIM}blocked{DIM:#}")
+    } else {
+        String::new()
+    };
+    let _ = writeln!(
+        out,
+        "{}{}  {}  {}  {size}{}{}{blocked}",
+        "  ".repeat(depth),
+        t.slug,
+        priority(tasks, derived, id),
+        status(tasks, id),
+        attention_column(tasks, derived, id),
+        t.title()
+    );
+    for c in tasks.children(id) {
+        write_ls_subtask(tasks, derived, c.id, depth + 1, width, out);
+    }
 }
 
 /// The rows of `ergon ls`, each with its task, without line breaks.
@@ -245,23 +291,24 @@ pub fn ls_rows(tasks: &Tasks, derived: &Derived, sort: Sort) -> Vec<(i64, String
     let width = derived
         .sized()
         .then(|| size_width(derived, ids.iter().copied()));
-    let mut out = Vec::new();
-    for id in ids {
-        let t = tasks.get(id);
-        let context = match t.parent_id.map(|p| tasks.get(p)) {
-            Some(p) if !p.is_root() => format!("  {DIM}(in: {}){DIM:#}", p.title()),
-            _ => String::new(),
-        };
-        let size = width.map_or(String::new(), |w| format!("{}  ", size(derived, id, w)));
-        let row = format!(
-            "{}  {}  {}  {size}{}{}{context}",
-            t.slug,
-            priority(tasks, derived, id),
-            status(tasks, id),
-            attention_column(tasks, derived, id),
-            t.title()
-        );
-        out.push((id, row));
-    }
-    out
+    ids.into_iter()
+        .map(|id| (id, ls_row(tasks, derived, id, width)))
+        .collect()
+}
+
+fn ls_row(tasks: &Tasks, derived: &Derived, id: i64, width: Option<usize>) -> String {
+    let t = tasks.get(id);
+    let context = match t.parent_id.map(|p| tasks.get(p)) {
+        Some(p) if !p.is_root() => format!("  {DIM}(in: {}){DIM:#}", p.title()),
+        _ => String::new(),
+    };
+    let size = width.map_or(String::new(), |w| format!("{}  ", size(derived, id, w)));
+    format!(
+        "{}  {}  {}  {size}{}{}{context}",
+        t.slug,
+        priority(tasks, derived, id),
+        status(tasks, id),
+        attention_column(tasks, derived, id),
+        t.title()
+    )
 }

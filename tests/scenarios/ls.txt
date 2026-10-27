@@ -32,6 +32,16 @@ $ ergon tree qxpj --ls
   qxpj  todo         p2  Parent
 ▸   FTFE  todo         p2  First
     nHcx  todo         p2  Second  blocked
+
+# Before Second was blocked, Parent was listed whole; --subtasks shows what's
+# under each row.
+$ ergon dep rm nHcx pQyk
+$ ergon ls --subtasks
+qxpj  p2  todo         Parent
+  FTFE  p2  todo         First
+  nHcx  p2  todo         Second
+pQyk  p-  todo         Prerequisite
+$ ergon dep add nHcx pQyk
 $ ergon show nHcx
 demo/nHcx  Second
 status:    todo (inherited)
