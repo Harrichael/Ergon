@@ -25,7 +25,8 @@
 //!
 //! Every scenario gets a fresh database, `ERGON_SEED=1` (so slugs and UUIDs
 //! are deterministic), a frozen clock (`ERGON_NOW`, shown in UTC), no colour,
-//! and a fake `claude` that prints its directory and arguments.
+//! and a fake `claude` that prints its directory and arguments and saves the
+//! conversation under its own `CLAUDE_CONFIG_DIR` (not if `CRASH` is set).
 //!
 //! Run with `ERGON_BLESS=1` to rewrite failing expectations with the actual
 //! output, and `ERGON_SCENARIO=<name>` to run only matching files.
@@ -35,9 +36,13 @@ use std::process::Command;
 
 const NOW: &str = "1760000000"; // 2025-10-09 08:53:20 UTC
 
+// Saves the conversation where Claude Code would, unless CRASH is set.
 const FAKE_CLAUDE: &str = r#"#!/bin/sh
 printf '[claude in %s]\n' "$PWD"
 for arg in "$@"; do printf '%s\n' "$arg"; done
+if [ "$1" = --session-id ] && [ -z "$CRASH" ]; then
+  mkdir -p "$CLAUDE_CONFIG_DIR/projects/p" && : > "$CLAUDE_CONFIG_DIR/projects/p/$2.jsonl"
+fi
 "#;
 
 struct Step {
@@ -234,6 +239,10 @@ impl Sandbox {
             .current_dir(&self.cwd)
             .env("ERGON_DB", &self.db)
             .env("ERGON_CLAUDE", &self.claude)
+            .env(
+                "CLAUDE_CONFIG_DIR",
+                self.claude.with_file_name("claude-config"),
+            )
             .env("ERGON_SEED", "1")
             .env("ERGON_NOW", NOW)
             .env("TZ", "UTC")

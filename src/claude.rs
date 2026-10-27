@@ -164,10 +164,26 @@ pub fn work(
                 dir.display()
             );
         }
+        if conversation_saved(session) {
+            return Ok(Launch {
+                program,
+                cwd: dir,
+                args: vec!["--resume".into(), session.to_string()],
+                warning,
+            });
+        }
+        // claude was launched but never saved the conversation (it crashed
+        // or quit at once): there is nothing to resume, so start it again.
+        let fresh = format!("session {session} was never saved; starting it again");
+        let warning = Some(warning.map_or(fresh.clone(), |w| format!("{w}\nwarning: {fresh}")));
         return Ok(Launch {
             program,
             cwd: dir,
-            args: vec!["--resume".into(), session.to_string()],
+            args: vec![
+                "--session-id".into(),
+                session.to_string(),
+                prompt(&tasks, &ids),
+            ],
             warning,
         });
     }
@@ -199,6 +215,20 @@ pub fn work(
         args: vec!["--session-id".into(), session, prompt],
         warning,
     })
+}
+
+/// Whether Claude Code saved `session`'s conversation: it keeps each as
+/// `projects/<dir>/<session>.jsonl` under `$CLAUDE_CONFIG_DIR`, else
+/// `~/.claude`. When there's no projects folder to look in, assume it did.
+fn conversation_saved(session: &str) -> bool {
+    let config = std::env::var_os("CLAUDE_CONFIG_DIR")
+        .map(PathBuf::from)
+        .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".claude")));
+    let Some(Ok(projects)) = config.map(|c| std::fs::read_dir(c.join("projects"))) else {
+        return true;
+    };
+    let file = format!("{session}.jsonl");
+    projects.flatten().any(|d| d.path().join(&file).is_file())
 }
 
 /// The prompt a session starts with: the planner's for the root, otherwise

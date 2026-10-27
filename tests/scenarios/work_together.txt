@@ -114,3 +114,40 @@ $ ergon work - <<EOF
 EOF
 error: no tasks on stdin
 [exit 1]
+
+# If claude dies before it saves the conversation, there's nothing to resume:
+# the next `ergon work` starts the same session again instead.
+$ ergon add Crashy
+qwpT
+$ CRASH=1 ergon work qwpT
+[claude in $ROOT]
+--session-id
+1c00f751-1ae5-476d-b826-a7e779d4c793
+Greater context that your work sits within:
+
+- Build a demo
+
+Task to complete here (demo/qwpT):
+
+Crashy
+
+Ask the user how they'd like to start.
+$ ergon work qwpT
+[claude in $ROOT]
+--session-id
+1c00f751-1ae5-476d-b826-a7e779d4c793
+Greater context that your work sits within:
+
+- Build a demo
+
+Task to complete here (demo/qwpT):
+
+Crashy
+
+Ask the user how they'd like to start.
+
+warning: session 1c00f751-1ae5-476d-b826-a7e779d4c793 was never saved; starting it again
+$ ergon work qwpT
+[claude in $ROOT]
+--resume
+1c00f751-1ae5-476d-b826-a7e779d4c793

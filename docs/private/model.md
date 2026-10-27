@@ -326,7 +326,10 @@ refused if there is none, and an empty stdin starts nothing:
   `claude --session-id <uuid> "<prompt>"`.
 - **Afterwards** (every task has the same session): changes to the recorded
   directory (an error if it no longer exists) and launches
-  `claude --resume <uuid>`.
+  `claude --resume <uuid>`. If Claude Code never saved that conversation
+  (no `projects/*/<uuid>.jsonl` under `$CLAUDE_CONFIG_DIR` or `~/.claude`;
+  claude crashed or quit at once), it launches the first-time command
+  again instead, with a warning.
 - **Refused** if the tasks have different sessions, or only some have one:
   that session's conversation is already under way, and adding work to it is
   a change of plan for the user to make.
