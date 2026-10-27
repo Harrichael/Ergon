@@ -394,7 +394,8 @@ ergon tree [<ref>] [--ls]
     attention. --ls marks the tasks `ergon ls` lists with a ▸ gutter and a
     bold title.
 ergon ls [--sort FIELD [asc|desc]] [--subtasks] [--groups | --ancestors]
-         [--priority RANGE] [--attention RANGE] [--size RANGE] [--intent]
+         [--priority RANGE] [--attention RANGE] [--size RANGE]
+         [--status STATUS,...] [--intent]
     --subtasks follows each row with its subtasks, indented, in tree order.
     --groups nests rows under the ancestors they share: an ancestor is shown
     (slug and bold title) only where listed tasks reach it through two or
@@ -404,7 +405,9 @@ ergon ls [--sort FIELD [asc|desc]] [--subtasks] [--groups | --ancestors]
     --priority, --attention and --size RANGE keep only the rows whose value
     (as shown: effective priority and attention, size left) is in RANGE:
     `a..b`, `..b`, `a..` or `a`, both ends included, or `none` for no value.
-    Flags combine; the filter runs before nesting.
+    --status todo|in_progress (comma-separated) keeps tasks whose effective
+    status is one of them; closed statuses and landing are refused, since ls
+    never lists them. Flags combine; the filter runs before nesting.
     --intent follows each task row with the rest of its intent behind a dim
     `│` gutter; `ergon work -` skips gutter lines, so it still pipes. Bodies
     wrap between words to `COLUMNS`, else the terminal's width, with list

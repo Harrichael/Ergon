@@ -135,6 +135,10 @@ enum Command {
         /// for unsized.
         #[arg(long, value_name = "RANGE", value_parser = parse_size_range)]
         size: Option<Range>,
+        /// Only tasks with these statuses, comma-separated: `todo`,
+        /// `in_progress`, or both (the only ones `ls` lists).
+        #[arg(long, value_name = "STATUS,...", value_parser = parse_ls_statuses)]
+        status: Option<LsStatuses>,
         /// Show each task's full intent: its body under its row.
         #[arg(long)]
         intent: bool,
@@ -286,6 +290,26 @@ fn parse_size_or_none(s: &str) -> Result<OrNone<u32>, String> {
 
 fn parse_attention(s: &str) -> Result<u8, String> {
     task::parse_attention(s).map_err(|e| e.to_string())
+}
+
+/// `ls --status`: open statuses only, since `ls` lists nothing else.
+#[derive(Clone)]
+struct LsStatuses(Vec<Status>);
+
+fn parse_ls_statuses(s: &str) -> Result<LsStatuses, String> {
+    s.split(',')
+        .map(|part| {
+            let status = Status::parse(part).map_err(|e| e.to_string())?;
+            if !status.is_open() {
+                return Err(format!(
+                    "ergon ls lists only todo and in_progress tasks, never {}; see them in ergon tree",
+                    status.as_str()
+                ));
+            }
+            Ok(status)
+        })
+        .collect::<Result<_, _>>()
+        .map(LsStatuses)
 }
 
 fn parse_priority_range(s: &str) -> Result<Range, String> {
@@ -450,6 +474,7 @@ fn run(cli: Cli) -> Result<()> {
             priority,
             attention,
             size,
+            status,
             intent,
         } => {
             let sort = match sort.as_deref() {
@@ -464,8 +489,8 @@ fn run(cli: Cli) -> Result<()> {
                 (_, true) => view::Nest::Ancestors,
                 _ => view::Nest::Flat,
             };
-            let filter = Filter(
-                [
+            let filter = Filter {
+                ranges: [
                     (SortField::Priority, priority),
                     (SortField::Attention, attention),
                     (SortField::Size, size),
@@ -473,7 +498,8 @@ fn run(cli: Cli) -> Result<()> {
                 .into_iter()
                 .filter_map(|(field, range)| Some((field, range?)))
                 .collect(),
-            );
+                statuses: status.map(|s| s.0),
+            };
             let tasks = Tasks::load(&conn, &project_for(&conn, &[])?)?;
             print!(
                 "{}",

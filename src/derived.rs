@@ -395,15 +395,23 @@ impl Range {
     }
 }
 
-/// Which `ls` rows to keep: every range must hold.
+/// Which `ls` rows to keep: every range must hold, and the effective status
+/// must be one of `statuses` when that's given.
 #[derive(Clone, Debug, Default)]
-pub struct Filter(pub Vec<(SortField, Range)>);
+pub struct Filter {
+    pub ranges: Vec<(SortField, Range)>,
+    pub statuses: Option<Vec<Status>>,
+}
 
 impl Filter {
     pub fn keeps(&self, tasks: &Tasks, derived: &Derived, id: i64) -> bool {
-        self.0
-            .iter()
-            .all(|&(field, range)| range.holds(field.value(tasks, derived, id)))
+        self.statuses
+            .as_ref()
+            .is_none_or(|s| s.contains(&tasks.effective_status(id)))
+            && self
+                .ranges
+                .iter()
+                .all(|&(field, range)| range.holds(field.value(tasks, derived, id)))
     }
 }
 

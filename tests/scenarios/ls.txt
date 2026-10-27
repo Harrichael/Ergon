@@ -162,3 +162,18 @@ error: invalid value 'p9..' for '--priority <RANGE>': invalid priority "p9": exp
 
 For more information, try '--help'.
 [exit 2]
+
+# --status keeps tasks with one of the statuses given, effective, so a
+# subtask follows its parent's. ls lists only open tasks, so only todo and
+# in_progress make sense.
+$ ergon edit FTFE --status in_progress
+$ ergon ls --status todo
+nHcx  p0  todo         -  a?   Unrated
+qxpj  p2  todo         2  a7   Small
+$ ergon ls --status in-progress,todo --attention ..5
+FTFE  p1  in_progress  8  a2   Big
+$ ergon ls --status done
+error: invalid value 'done' for '--status <STATUS,...>': ergon ls lists only todo and in_progress tasks, never done; see them in ergon tree
+
+For more information, try '--help'.
+[exit 2]
