@@ -482,9 +482,12 @@ fn run(cli: Cli) -> Result<()> {
                     &Derived::compute(&tasks),
                     sort,
                     &filter,
-                    subtasks,
-                    nest,
-                    intent,
+                    view::Layout {
+                        subtasks,
+                        nest,
+                        intent,
+                        columns: columns(),
+                    },
                 )
             );
         }
@@ -583,6 +586,14 @@ fn run(cli: Cli) -> Result<()> {
         }
     }
     Ok(())
+}
+
+/// The width to wrap to: `COLUMNS` when set, else the terminal's, else none.
+fn columns() -> Option<usize> {
+    std::env::var("COLUMNS")
+        .ok()
+        .and_then(|c| c.parse().ok())
+        .or_else(|| crossterm::terminal::size().ok().map(|(w, _)| w.into()))
 }
 
 fn launch(l: claude::Launch, stdin: Option<std::fs::File>) -> Result<()> {

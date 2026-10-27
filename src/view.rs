@@ -242,18 +242,15 @@ fn write_tree(row: &Row, id: i64, depth: usize, out: &mut String) {
     }
 }
 
-/// `ergon ls`: one row per task ready to start that `filter` keeps. With
-/// `subtasks`, each is followed by its subtasks, indented. `nest` puts rows
-/// under their ancestors. With `intent`, each task's body follows its row.
-pub fn ls(
-    tasks: &Tasks,
-    derived: &Derived,
-    sort: Sort,
-    filter: &Filter,
-    subtasks: bool,
-    nest: Nest,
-    intent: bool,
-) -> String {
+/// `ergon ls`: one row per task ready to start that `filter` keeps, laid out
+/// as `layout` says.
+pub fn ls(tasks: &Tasks, derived: &Derived, sort: Sort, filter: &Filter, layout: Layout) -> String {
+    let Layout {
+        subtasks,
+        nest,
+        intent,
+        columns,
+    } = layout;
     let mut ids = derived::ls(tasks, derived, sort);
     ids.retain(|&id| filter.keeps(tasks, derived, id));
     let shown = |id: i64| {
@@ -277,11 +274,24 @@ pub fn ls(
         width,
         subtasks,
         intent,
+        columns,
         members,
     };
     let mut out = String::new();
     view.write(None, 0, &mut out);
     out
+}
+
+/// How `ergon ls` lays out its rows.
+#[derive(Clone, Copy)]
+pub struct Layout {
+    /// Each row followed by its subtasks, indented.
+    pub subtasks: bool,
+    pub nest: Nest,
+    /// Each task's body under its row.
+    pub intent: bool,
+    /// The terminal's width, to wrap bodies to.
+    pub columns: Option<usize>,
 }
 
 /// Which ancestors `ergon ls` shows its rows under.
@@ -336,6 +346,7 @@ struct Ls<'a> {
     width: Option<usize>,
     subtasks: bool,
     intent: bool,
+    columns: Option<usize>,
     members: HashMap<Option<i64>, Vec<i64>>,
 }
 
@@ -398,15 +409,54 @@ impl Ls<'_> {
             return;
         };
         let pad = "  ".repeat(depth);
+        // Past the indent and the gutter, but never so narrow a word a line.
+        let width = self
+            .columns
+            .map(|c| c.saturating_sub(pad.len() + 2).max(30));
         for line in body.trim_start_matches(['\n', '\r']).trim_end().lines() {
             let line = line.trim_end();
             if line.is_empty() {
                 let _ = writeln!(out, "{pad}{DIM}│{DIM:#}");
-            } else {
-                let _ = writeln!(out, "{pad}{DIM}│{DIM:#} {line}");
+                continue;
+            }
+            for part in width.map_or(vec![line.to_string()], |w| wrap(line, w)) {
+                let _ = writeln!(out, "{pad}{DIM}│{DIM:#} {part}");
             }
         }
     }
+}
+
+/// `line` broken between words to fit `width`. Continuation lines line up
+/// under the text, past any indentation and list marker (`- `, `* `, `1. `).
+fn wrap(line: &str, width: usize) -> Vec<String> {
+    let text = line.trim_start();
+    let indent = line.len() - text.len();
+    let marker = ["- ", "* "]
+        .into_iter()
+        .find(|m| text.starts_with(m))
+        .map(str::len)
+        .or_else(|| {
+            let digits = text.chars().take_while(char::is_ascii_digit).count();
+            (digits > 0 && text[digits..].starts_with(". ")).then_some(digits + 2)
+        })
+        .unwrap_or(0);
+    let hang = " ".repeat(indent + marker);
+    let mut lines = Vec::new();
+    let mut cur = line[..indent].to_string();
+    let mut fresh = true;
+    for word in text.split(' ').filter(|w| !w.is_empty()) {
+        if !fresh && cur.chars().count() + 1 + word.chars().count() > width {
+            lines.push(std::mem::replace(&mut cur, hang.clone()));
+            fresh = true;
+        }
+        if !fresh {
+            cur.push(' ');
+        }
+        cur.push_str(word);
+        fresh = false;
+    }
+    lines.push(cur);
+    lines
 }
 
 /// The rows of `ergon ls`, each with its task, without line breaks.

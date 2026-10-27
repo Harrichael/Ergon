@@ -71,9 +71,11 @@ root  Root
       bfLH  p-  todo         Rollout
 
 # --intent shows each task's body under its row, behind a gutter that
-# `ergon work -` skips.
+# `ergon work -` skips, wrapped to the terminal (COLUMNS here) with list
+# items hanging under their text.
 $ ergon edit nHcx --intent "Cart\n\nKeep items across sessions.\n\nShow totals with tax."
-$ ergon ls --intent --groups --subtasks
+$ ergon edit 9cDQ --intent "Cards\n\nTake Visa, Mastercard and Amex through the processor we already use for invoices.\n- Store only the token it returns, never the number itself.\n- Retry declines once."
+$ COLUMNS=60 ergon ls --intent --groups --subtasks
 qxpj  p-  todo         Blocker
 FTFE  Checkout
   nHcx  p-  todo         Cart
@@ -83,5 +85,10 @@ FTFE  Checkout
     Hwgf  p-  todo         Badge
   pQyk  Payments
     9cDQ  p-  todo         Cards
+      │ Take Visa, Mastercard and Amex through the processor
+      │ we already use for invoices.
+      │ - Store only the token it returns, never the number
+      │   itself.
+      │ - Retry declines once.
     dFR6  p-  todo         Wallets
 bfLH  p-  todo         Rollout  (in: Deploy)

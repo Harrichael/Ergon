@@ -402,7 +402,9 @@ ergon ls [--sort FIELD [asc|desc]] [--subtasks] [--groups | --ancestors]
     `a..b`, `..b`, `a..` or `a`, both ends included, or `none` for no value.
     Flags combine; the filter runs before nesting.
     --intent follows each task row with the rest of its intent behind a dim
-    `│` gutter; `ergon work -` skips gutter lines, so it still pipes.
+    `│` gutter; `ergon work -` skips gutter lines, so it still pipes. Bodies
+    wrap between words to `COLUMNS`, else the terminal's width, with list
+    items' continuation lines under their text.
 ergon outline [--json]
 ergon outline --apply [--dry-run]
 ergon outline --format
