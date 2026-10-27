@@ -225,11 +225,19 @@ fn write_tree(
 
 /// `ergon ls`: one row per task ready to start.
 pub fn ls(tasks: &Tasks, derived: &Derived) -> String {
+    ls_rows(tasks, derived)
+        .into_iter()
+        .map(|(_, row)| row + "\n")
+        .collect()
+}
+
+/// The rows of `ergon ls`, each with its task, without line breaks.
+pub fn ls_rows(tasks: &Tasks, derived: &Derived) -> Vec<(i64, String)> {
     let ids = derived::ls(tasks, derived);
     let width = derived
         .sized()
         .then(|| size_width(derived, ids.iter().copied()));
-    let mut out = String::new();
+    let mut out = Vec::new();
     for id in ids {
         let t = tasks.get(id);
         let context = match t.parent_id.map(|p| tasks.get(p)) {
@@ -237,8 +245,7 @@ pub fn ls(tasks: &Tasks, derived: &Derived) -> String {
             _ => String::new(),
         };
         let size = width.map_or(String::new(), |w| format!("{}  ", size(derived, id, w)));
-        let _ = writeln!(
-            out,
+        let row = format!(
             "{}  {}  {}  {size}{}{}{context}",
             t.slug,
             priority(tasks, derived, id),
@@ -246,6 +253,7 @@ pub fn ls(tasks: &Tasks, derived: &Derived) -> String {
             attention_column(tasks, derived, id),
             t.title()
         );
+        out.push((id, row));
     }
     out
 }

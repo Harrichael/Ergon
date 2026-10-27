@@ -5,6 +5,7 @@ pub mod export;
 pub mod fmt;
 pub mod ops;
 pub mod outline;
+pub mod picker;
 pub mod project;
 pub mod refs;
 pub mod slug;

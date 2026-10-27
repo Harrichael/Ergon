@@ -37,8 +37,8 @@ Commands:
   dep      Manage dependencies
   export   Print projects in full as JSON, for backups or another database
   import   Add the projects in an export (a file, or stdin) to this database
-  work     Start or resume the Claude Code session for a task
-  prompt   Print the prompt `ergon work` starts a task's session with
+  work     Start or resume the Claude Code session for a task, or for several
+  prompt   Print the prompt `ergon work` starts a session with
   help     Print help for ergon or a command; `ergon help planner` prints the planner's instructions
 
 Options:

@@ -35,6 +35,31 @@ impl FromStr for TaskRef {
     }
 }
 
+/// References separated by commas: `FTFE,nHcx` or `demo/FTFE,demo/nHcx`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TaskRefs(pub Vec<TaskRef>);
+
+impl FromStr for TaskRefs {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> Result<Self> {
+        s.split(',')
+            .map(str::parse)
+            .collect::<Result<_>>()
+            .map(TaskRefs)
+    }
+}
+
+impl TaskRefs {
+    pub fn iter(&self) -> impl Iterator<Item = &TaskRef> {
+        self.0.iter()
+    }
+
+    pub fn slugs(&self) -> Vec<String> {
+        self.0.iter().map(|r| r.slug.clone()).collect()
+    }
+}
+
 /// The single project that `--project` and the references name, falling back
 /// to the nearest `.ergon` file above `cwd`.
 pub fn project_for(

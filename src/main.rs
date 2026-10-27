@@ -5,11 +5,11 @@ use rusqlite::Connection;
 use anstream::{print, println};
 use ergon::ops::{self, Changes};
 use ergon::project::{self, Project};
-use ergon::refs::{self, TaskRef};
+use ergon::refs::{self, TaskRef, TaskRefs};
 use ergon::task::{self, Status, Tasks};
 
 use ergon::derived::Derived;
-use ergon::{claude, db, export, fmt, outline, view};
+use ergon::{claude, db, export, fmt, outline, picker, view};
 use std::io::Read;
 
 /// Minimal task tracker for dispatching work to Claude Code sessions.
@@ -155,13 +155,23 @@ enum Command {
     /// They keep their UUIDs, so their .ergon files still find them. All or
     /// nothing: a project that's already in the database is refused.
     Import { file: Option<std::path::PathBuf> },
-    /// Start or resume the Claude Code session for a task.
-    Work { task: TaskRef },
-    /// Print the prompt `ergon work` starts a task's session with
+    /// Start or resume the Claude Code session for a task, or for several
+    ///
+    /// Tasks given as `slug,slug,...` are taken on together, in one session
+    /// that every one of them records. Once they have it, `ergon work` on any
+    /// of them resumes it.
+    #[command(group(clap::ArgGroup::new("which").required(true).args(["tasks", "interactive"])))]
+    Work {
+        tasks: Option<TaskRefs>,
+        /// Pick the tasks from `ergon ls` instead.
+        #[arg(short, long)]
+        interactive: bool,
+    },
+    /// Print the prompt `ergon work` starts a session with
     ///
     /// Rendered from the tasks as they are now, not as they were when the
     /// session started. Changes nothing.
-    Prompt { task: TaskRef },
+    Prompt { tasks: TaskRefs },
     /// Print help for ergon or a command; `ergon help planner` prints the
     /// planner's instructions.
     Help { topic: Option<String> },
@@ -269,7 +279,8 @@ fn run(cli: Cli) -> Result<()> {
             let p = project::init(&mut conn, &name, &root_intent, &cwd)?;
             println!("Created project {} in {}", p.name, cwd.display());
             if !no_launch {
-                launch(claude::work(&mut conn, &p, project::ROOT_SLUG, &cwd)?)?;
+                let root = [project::ROOT_SLUG.to_string()];
+                launch(claude::work(&mut conn, &p, &root, &cwd)?)?;
             }
         }
         Command::Project(cmd) => run_project(&conn, cmd)?,
@@ -408,14 +419,23 @@ fn run(cli: Cli) -> Result<()> {
                 println!("Imported {name} ({tasks} task{s})");
             }
         }
-        Command::Work { task } => {
-            let p = project_for(&conn, &[&task])?;
-            launch(claude::work(&mut conn, &p, &task.slug, &cwd)?)?;
+        Command::Work { tasks, .. } => {
+            let refs: Vec<&TaskRef> = tasks.iter().flat_map(|t| t.iter()).collect();
+            let p = project_for(&conn, &refs)?;
+            let l = match &tasks {
+                Some(t) => claude::work(&mut conn, &p, &t.slugs(), &cwd)?,
+                None => match picker::run(&mut conn, &p, &cwd)? {
+                    Some(l) => l,
+                    None => return Ok(()),
+                },
+            };
+            launch(l)?;
         }
-        Command::Prompt { task } => {
-            let p = project_for(&conn, &[&task])?;
-            let tasks = Tasks::load(&conn, &p)?;
-            print!("{}", claude::prompt(&tasks, tasks.live(&task.slug)?.id));
+        Command::Prompt { tasks } => {
+            let p = project_for(&conn, &tasks.iter().collect::<Vec<_>>())?;
+            let all = Tasks::load(&conn, &p)?;
+            let ids = claude::selection(&all, &tasks.slugs())?;
+            print!("{}", claude::prompt(&all, &ids));
         }
         Command::Help { .. } => unreachable!("handled above"),
         Command::Dep(DepCommand::Add { task, depends_on }) => {

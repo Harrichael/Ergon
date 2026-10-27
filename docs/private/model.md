@@ -276,17 +276,27 @@ changes nothing about its tasks.
 ## Claude sessions
 
 Each task may hold one Claude Code session: its session UUID and the directory
-it was started in.
+it was started in. Several tasks may hold the same session, when they were
+taken on together.
 
-`ergon work <ref>`:
+`ergon work <ref>[,<ref>...]`, or `ergon work -i` to pick the tasks from the
+`ls` list (Space checks, Enter starts the checked tasks or else the
+highlighted one; a refusal stays in the picker):
 
-- **Refused** if the task's effective status is closed. It works on blocked
+- **Refused** if any task's effective status is closed, if the root is
+  given with other tasks (planning isn't work), or if a task is given with
+  one of its own subtasks (it already includes them). It works on blocked
   tasks, with a warning.
-- **First time:** generates a session UUID and records it with the current
-  directory. If the effective status is `todo`, sets it to `in_progress`. Then
-  launches `claude --session-id <uuid> "<prompt>"`.
-- **Afterwards:** changes to the recorded directory (an error if it no longer
-  exists) and launches `claude --resume <uuid>`.
+- **First time** (no task has a session): generates one session UUID and
+  records it, with the current directory, on every task. Each one whose
+  effective status is `todo` is set to `in_progress`. Then launches
+  `claude --session-id <uuid> "<prompt>"`.
+- **Afterwards** (every task has the same session): changes to the recorded
+  directory (an error if it no longer exists) and launches
+  `claude --resume <uuid>`.
+- **Refused** if the tasks have different sessions, or only some have one:
+  that session's conversation is already under way, and adding work to it is
+  a change of plan for the user to make.
 
 ergon runs the `claude` found on `PATH`, or `$ERGON_CLAUDE` if set, and checks
 it exists before recording a session.
@@ -296,11 +306,12 @@ There are two prompts:
 - **Planner** (the root task, launched by `ergon init`):
   [planner.md](../prompts/planner.md), the project name, and the root intent. The planner is the only session that's
   expected to run `ergon`, to create, edit, and organise the project's tasks.
-- **Work** (every other task):
+- **Work** (every other task), from
+  [work.md.tera](../prompts/work.md.tera):
 
   ```
   Greater context that your work sits within:
-  <intents of the ancestors, root first>
+  <titles of the ancestors, root first>
 
   Task to complete here (<project>/<slug>):
   <the task's intent>
@@ -308,6 +319,10 @@ There are two prompts:
 
   Ask the user how they'd like to start.
   ```
+
+  For several tasks, the ancestors of all of them are merged into one
+  outline in tree order, and each task follows in tree order as `Task N of M
+  to complete here (...)`, with its own subtasks.
 
   Work sessions aren't told about ergon. The user (or the planner) updates
   their status.
@@ -355,9 +370,12 @@ ergon dep rm <ref> <depends-on-ref>
 ergon export
 ergon import [<file>]
 
-ergon work <ref>
-ergon prompt <ref>
-    Print the prompt `ergon work` starts the task's session with, rendered
+ergon work <ref>[,<ref>...]
+ergon work -i
+    Start or resume the session for one task or several taken on together;
+    with -i, pick them from the `ls` list.
+ergon prompt <ref>[,<ref>...]
+    Print the prompt `ergon work` starts the session with, rendered
     from the tasks as they are now. A session whose context was compacted
     can get its instructions back this way.
 ergon help planner

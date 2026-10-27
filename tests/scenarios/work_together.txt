@@ -1,0 +1,109 @@
+# Several tasks taken on together, as `slug,slug`: one session, recorded on
+# each, with one prompt that merges their context.
+
+$ ergon init demo "Build a demo" --no-launch
+Created project demo in $ROOT
+$ ergon add Backend
+qxpj
+$ ergon add "Write the API\nUse REST." --parent qxpj
+FTFE
+$ ergon add Routes --parent FTFE
+nHcx
+$ ergon add "Write the docs" --parent qxpj
+pQyk
+$ ergon add Frontend
+9cDQ
+$ ergon add Shipped --status done
+dFR6
+$ ergon prompt pQyk,FTFE,9cDQ
+Greater context that your work sits within:
+
+- Build a demo
+  - Backend
+
+Task 1 of 3 to complete here (demo/FTFE):
+
+Write the API
+
+Use REST.
+
+- Routes
+
+Task 2 of 3 to complete here (demo/pQyk):
+
+Write the docs
+
+Task 3 of 3 to complete here (demo/9cDQ):
+
+Frontend
+
+Ask the user how they'd like to start.
+$ ergon work FTFE,pQyk
+[claude in $ROOT]
+--session-id
+9487b132-9170-4b0c-ad01-fba48316f5e9
+Greater context that your work sits within:
+
+- Build a demo
+  - Backend
+
+Task 1 of 2 to complete here (demo/FTFE):
+
+Write the API
+
+Use REST.
+
+- Routes
+
+Task 2 of 2 to complete here (demo/pQyk):
+
+Write the docs
+
+Ask the user how they'd like to start.
+$ ergon work FTFE,9cDQ
+error: these tasks don't share one session, so they can't be worked on together: demo/FTFE (9487b132-9170-4b0c-ad01-fba48316f5e9), demo/9cDQ (no session)
+[exit 1]
+$ ergon show pQyk
+demo/pQyk  Write the docs
+status:    in_progress
+priority:  p-
+blocked:   no
+parent:    demo/qxpj  Backend
+created:   2025-10-09 08:53 (just now)
+updated:   2025-10-09 08:53 (just now)
+session:   9487b132-9170-4b0c-ad01-fba48316f5e9 in $ROOT
+delete:    ergon rm demo/pQyk --subtasks 0 --dependents 0
+
+Write the docs
+$ ergon work pQyk
+[claude in $ROOT]
+--resume
+9487b132-9170-4b0c-ad01-fba48316f5e9
+$ ergon work pQyk,FTFE
+[claude in $ROOT]
+--resume
+9487b132-9170-4b0c-ad01-fba48316f5e9
+
+# Refused: a closed task, the root among others, a task with its subtask.
+$ ergon work dFR6,9cDQ
+error: demo/dFR6 is done
+[exit 1]
+$ ergon work root,9cDQ
+error: the root's planner session can't take other tasks too
+[exit 1]
+$ ergon work FTFE,nHcx
+error: demo/nHcx is a subtask of demo/FTFE, which already includes it
+[exit 1]
+$ ergon work 9cDQ,qxpj/nope
+error: invalid value '9cDQ,qxpj/nope' for '[TASKS]': invalid task slug "nope"
+
+For more information, try '--help'.
+[exit 2]
+$ ergon work
+error: the following required arguments were not provided:
+  <TASKS|--interactive>
+
+Usage: ergon work <TASKS|--interactive>
+
+For more information, try '--help'.
+[exit 2]

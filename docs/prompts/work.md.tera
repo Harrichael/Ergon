@@ -1,16 +1,18 @@
 {#
-  The prompt a task's Claude session starts with (`ergon work`).
+  The prompt a Claude session starts with (`ergon work`), for one task or
+  several taken on together.
 
   Every task comes as its intent split in two: `title`, its first line, and
   `body`, the rest (empty when there is none).
 
-  ancestors   the tasks from the root down to the task's parent, each
-              also with `pad`: two spaces per level below the root
-  reference   the task's reference, e.g. demo/E6dn
-  task        the task itself
-  subtasks    its non-cancelled subtree, depth-first, each also with
-                pad      two spaces per level below the task
-                marker   "done", "landing", or null
+  ancestors   every task's ancestors, merged, in tree order from the root,
+              each also with `pad`: two spaces per level below the root
+  tasks       the tasks to complete, in tree order, each also with
+                reference   e.g. demo/E6dn
+                subtasks    its non-cancelled subtree, depth-first, each
+                            also with
+                  pad      two spaces per level below the task
+                  marker   "done", "landing", or null
 
   `text | indent(with=PREFIX)` puts PREFIX before every non-blank line.
 
@@ -22,22 +24,24 @@
 {%- for a in ancestors %}
 {{ a.pad }}- {{ a.title }}
 {%- endfor %}
+{%- for task in tasks %}
 
-Task to complete here ({{ reference }}):
+{% if tasks | length > 1 %}Task {{ loop.index }} of {{ tasks | length }}{% else %}Task{% endif %} to complete here ({{ task.reference }}):
 
 {{ task.title }}
-{%- if task.body %}
+  {%- if task.body %}
 
 {{ task.body }}
-{%- endif %}
-{%- if subtasks %}
+  {%- endif %}
+  {%- if task.subtasks %}
 {# a blank line before the outline #}
-  {%- for t in subtasks %}
+    {%- for t in task.subtasks %}
 {{ t.pad }}- {% if t.marker %}[{{ t.marker }}] {% endif %}{{ t.title }}
-    {%- if t.body %}
+      {%- if t.body %}
 {{ t.body | indent(with=t.pad ~ "  ") }}
-    {%- endif %}
-  {%- endfor %}
-{%- endif %}
+      {%- endif %}
+    {%- endfor %}
+  {%- endif %}
+{%- endfor %}
 
 Ask the user how they'd like to start.

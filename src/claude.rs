@@ -62,26 +62,97 @@ fn find_claude() -> Result<PathBuf> {
         .with_context(|| format!("{} not found on PATH", path.display()))
 }
 
-/// Prepares `ergon work`: the first time, records a new session with `cwd`
-/// and moves a `todo` task to `in_progress`; afterwards, resumes the session
-/// in its recorded directory.
-pub fn work(conn: &mut Connection, project: &Project, slug: &str, cwd: &Path) -> Result<Launch> {
+/// The tasks one session works on, in tree order: one task, or several
+/// taken on together. Refuses closed tasks, the root among others (planning
+/// isn't work), and a task alongside its own subtask (it includes it).
+pub fn selection(tasks: &Tasks, slugs: &[String]) -> Result<Vec<i64>> {
+    let mut ids = Vec::new();
+    for slug in slugs {
+        let id = tasks.live(slug)?.id;
+        if !ids.contains(&id) {
+            ids.push(id);
+        }
+    }
+    for &id in &ids {
+        let status = tasks.effective_status(id);
+        if status.is_closed() {
+            bail!("{} is {status}", tasks.reference(id));
+        }
+        if ids.len() > 1 && tasks.get(id).is_root() {
+            bail!("the root's planner session can't take other tasks too");
+        }
+        if let Some(&a) = ids.iter().find(|&&a| tasks.is_ancestor(a, id)) {
+            bail!(
+                "{} is a subtask of {}, which already includes it",
+                tasks.reference(id),
+                tasks.reference(a)
+            );
+        }
+    }
+    let root = tasks.root().id;
+    let order: Vec<i64> = std::iter::once(root)
+        .chain(tasks.descendants(root))
+        .collect();
+    ids.sort_by_key(|id| order.iter().position(|o| o == id));
+    Ok(ids)
+}
+
+/// Prepares `ergon work` for one task or several taken on together. The
+/// first time, records one new session with `cwd` on all of them and moves
+/// `todo` ones to `in_progress`; afterwards, resumes that session in its
+/// recorded directory. Tasks that have different sessions, or where only
+/// some have one, are refused: a session's conversation is already under
+/// way, and taking on more work would be a change of plan for the user to
+/// make.
+pub fn work(
+    conn: &mut Connection,
+    project: &Project,
+    slugs: &[String],
+    cwd: &Path,
+) -> Result<Launch> {
     let program = find_claude()?;
     let tx = conn.transaction()?;
     let tasks = Tasks::load(&tx, project)?;
-    let task = tasks.live(slug)?;
-    let reference = tasks.reference(task.id);
-    let status = tasks.effective_status(task.id);
-    if status.is_closed() {
-        bail!("{reference} is {status}");
-    }
-    let blocked_by = crate::derived::blocked_by(&tasks, task.id);
-    let warning = (!blocked_by.is_empty()).then(|| {
-        let refs: Vec<String> = blocked_by.iter().map(|&d| tasks.reference(d)).collect();
-        format!("{reference} is blocked, waiting on {}", refs.join(", "))
-    });
+    let ids = selection(&tasks, slugs)?;
+    let warnings: Vec<String> = ids
+        .iter()
+        .filter_map(|&id| {
+            let blocked_by = crate::derived::blocked_by(&tasks, id);
+            (!blocked_by.is_empty()).then(|| {
+                let refs: Vec<String> = blocked_by.iter().map(|&d| tasks.reference(d)).collect();
+                format!(
+                    "{} is blocked, waiting on {}",
+                    tasks.reference(id),
+                    refs.join(", ")
+                )
+            })
+        })
+        .collect();
+    let warning = (!warnings.is_empty()).then(|| warnings.join("\nwarning: "));
 
-    if let (Some(session), Some(dir)) = (&task.claude_session, &task.claude_cwd) {
+    let sessions: Vec<(&str, &str)> = ids
+        .iter()
+        .filter_map(|&id| {
+            let t = tasks.get(id);
+            Some((t.claude_session.as_deref()?, t.claude_cwd.as_deref()?))
+        })
+        .collect();
+    if let Some(&(session, dir)) = sessions.first() {
+        if sessions.len() < ids.len() || sessions.iter().any(|s| s.0 != session) {
+            let list: Vec<String> = ids
+                .iter()
+                .map(|&id| {
+                    let t = tasks.get(id);
+                    let s = t.claude_session.as_deref().unwrap_or("no session");
+                    format!("{} ({s})", tasks.reference(id))
+                })
+                .collect();
+            bail!(
+                "these tasks don't share one session, so they can't be worked on together: {}",
+                list.join(", ")
+            );
+        }
+        let reference = tasks.reference(ids[0]);
         let dir = PathBuf::from(dir);
         if !dir.is_dir() {
             bail!(
@@ -92,29 +163,32 @@ pub fn work(conn: &mut Connection, project: &Project, slug: &str, cwd: &Path) ->
         return Ok(Launch {
             program,
             cwd: dir,
-            args: vec!["--resume".into(), session.clone()],
+            args: vec!["--resume".into(), session.to_string()],
             warning,
         });
     }
 
-    let session = crate::uuid(&mut crate::rng(task.id as u64));
+    let session = crate::uuid(&mut crate::rng(ids[0] as u64));
     let dir = cwd
         .to_str()
         .with_context(|| format!("{} isn't valid UTF-8", cwd.display()))?;
-    let new_status = if status == Status::Todo {
-        Some(Status::InProgress)
-    } else {
-        task.status
-    };
-    tx.execute(
-        "UPDATE tasks SET claude_session = ?1, claude_cwd = ?2, status = ?3, updated_at = ?4
-         WHERE id = ?5",
-        params![session, dir, new_status, crate::now(), task.id],
-    )?;
+    for &id in &ids {
+        let task = tasks.get(id);
+        let new_status = if tasks.effective_status(id) == Status::Todo {
+            Some(Status::InProgress)
+        } else {
+            task.status
+        };
+        tx.execute(
+            "UPDATE tasks SET claude_session = ?1, claude_cwd = ?2, status = ?3, updated_at = ?4
+             WHERE id = ?5",
+            params![session, dir, new_status, crate::now(), id],
+        )?;
+    }
     Tasks::load(&tx, project)?.validate().context("refused")?;
     tx.commit()?;
 
-    let prompt = prompt(&tasks, task.id);
+    let prompt = prompt(&tasks, &ids);
     Ok(Launch {
         program,
         cwd: cwd.to_path_buf(),
@@ -123,14 +197,14 @@ pub fn work(conn: &mut Connection, project: &Project, slug: &str, cwd: &Path) ->
     })
 }
 
-/// The prompt a task's session starts with: the planner's for the root,
-/// otherwise the work session's. Rendered from the tasks as they are now, so
-/// a session that lost it, to compaction say, gets back an up-to-date copy.
-pub fn prompt(tasks: &Tasks, id: i64) -> String {
-    if tasks.get(id).is_root() {
-        planner_prompt(tasks)
-    } else {
-        work_prompt(tasks, id)
+/// The prompt a session starts with: the planner's for the root, otherwise
+/// the work session's for the tasks, as `selection` returns them. Rendered
+/// from the tasks as they are now, so a session that lost it, to compaction
+/// say, gets back an up-to-date copy.
+pub fn prompt(tasks: &Tasks, ids: &[i64]) -> String {
+    match ids {
+        [id] if tasks.get(*id).is_root() => planner_prompt(tasks),
+        _ => work_prompt(tasks, ids),
     }
 }
 
@@ -179,26 +253,46 @@ struct Outlined<'a> {
     marker: Option<Status>,
 }
 
-fn work_prompt(tasks: &Tasks, id: i64) -> String {
-    let ancestors: Vec<Outlined> = tasks
-        .ancestors(id)
-        .into_iter()
-        .rev()
-        .enumerate()
-        .map(|(depth, a)| Outlined {
+/// One task the session is to complete, with its subtree.
+#[derive(Serialize)]
+struct Assigned<'a> {
+    reference: String,
+    #[serde(flatten)]
+    intent: Intent<'a>,
+    subtasks: Vec<Outlined<'a>>,
+}
+
+fn work_prompt(tasks: &Tasks, ids: &[i64]) -> String {
+    // Every task's ancestors, merged into one outline in tree order, so
+    // tasks that share a parent share its context.
+    let wanted: std::collections::HashSet<i64> =
+        ids.iter().flat_map(|&id| tasks.ancestors(id)).collect();
+    let root = tasks.root().id;
+    let ancestors: Vec<Outlined> = std::iter::once(root)
+        .chain(tasks.descendants(root))
+        .filter(|a| wanted.contains(a))
+        .map(|a| Outlined {
             intent: Intent::of(&tasks.get(a).intent),
-            pad: "  ".repeat(depth),
+            pad: "  ".repeat(tasks.ancestors(a).len()),
             marker: None,
         })
         .collect();
-    let mut subtasks = Vec::new();
-    collect_subtasks(tasks, id, 0, &mut subtasks);
+    let assigned: Vec<Assigned> = ids
+        .iter()
+        .map(|&id| {
+            let mut subtasks = Vec::new();
+            collect_subtasks(tasks, id, 0, &mut subtasks);
+            Assigned {
+                reference: tasks.reference(id),
+                intent: Intent::of(&tasks.get(id).intent),
+                subtasks,
+            }
+        })
+        .collect();
 
     let mut ctx = tera::Context::new();
     ctx.insert("ancestors", &ancestors);
-    ctx.insert("reference", &tasks.reference(id));
-    ctx.insert("task", &Intent::of(&tasks.get(id).intent));
-    ctx.insert("subtasks", &subtasks);
+    ctx.insert("tasks", &assigned);
     let mut tera = tera::Tera::default();
     tera.register_filter("indent", indent);
     tera.add_raw_template("work.md", WORK_TEMPLATE)
@@ -273,7 +367,7 @@ mod tests {
         let n = add(&mut conn, Some(&c), "Nested\nOne level down.");
 
         let tasks = Tasks::load(&conn, &p).unwrap();
-        let prompt = work_prompt(&tasks, tasks.live(&b).unwrap().id);
+        let prompt = work_prompt(&tasks, &[tasks.live(&b).unwrap().id]);
         assert_eq!(
             prompt,
             format!(
@@ -301,7 +395,7 @@ Ask the user how they'd like to start.
             )
         );
 
-        let leaf = work_prompt(&tasks, tasks.live(&n).unwrap().id);
+        let leaf = work_prompt(&tasks, &[tasks.live(&n).unwrap().id]);
         assert!(leaf.ends_with(&format!(
             "  - Backend
     - Write the API
