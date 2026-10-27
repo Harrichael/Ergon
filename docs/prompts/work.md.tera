@@ -26,7 +26,7 @@
 #}## Context
 
 These are the ancestor tasks which may help frame your work:
-
+{# a blank line before the outline #}
 {%- for a in ancestors %}
 {{ a.pad }}- {{ a.title }}
   {%- if a.body %}

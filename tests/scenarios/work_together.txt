@@ -18,10 +18,12 @@ dFR6
 $ ergon prompt pQyk,FTFE,9cDQ
 ## Context
 
+These are the ancestor tasks which may help frame your work:
+
 - Build a demo
   - Backend
 
-## Task 1 of 3 (demo/FTFE)
+## Your Task 1 of 3 (demo/FTFE)
 
 Write the API
 
@@ -29,11 +31,11 @@ Use REST.
 
 - Routes
 
-## Task 2 of 3 (demo/pQyk)
+## Your Task 2 of 3 (demo/pQyk)
 
 Write the docs
 
-## Task 3 of 3 (demo/9cDQ)
+## Your Task 3 of 3 (demo/9cDQ)
 
 Frontend
 
@@ -59,10 +61,12 @@ $ ergon work FTFE,pQyk
 9487b132-9170-4b0c-ad01-fba48316f5e9
 ## Context
 
+These are the ancestor tasks which may help frame your work:
+
 - Build a demo
   - Backend
 
-## Task 1 of 2 (demo/FTFE)
+## Your Task 1 of 2 (demo/FTFE)
 
 Write the API
 
@@ -70,7 +74,7 @@ Use REST.
 
 - Routes
 
-## Task 2 of 2 (demo/pQyk)
+## Your Task 2 of 2 (demo/pQyk)
 
 Write the docs
 
@@ -155,9 +159,11 @@ $ CRASH=1 ergon work qwpT
 1c00f751-1ae5-476d-b826-a7e779d4c793
 ## Context
 
+These are the ancestor tasks which may help frame your work:
+
 - Build a demo
 
-## Task (demo/qwpT)
+## Your Task (demo/qwpT)
 
 Crashy
 
@@ -183,9 +189,11 @@ $ ergon work qwpT
 1c00f751-1ae5-476d-b826-a7e779d4c793
 ## Context
 
+These are the ancestor tasks which may help frame your work:
+
 - Build a demo
 
-## Task (demo/qwpT)
+## Your Task (demo/qwpT)
 
 Crashy
 

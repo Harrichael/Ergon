@@ -17,9 +17,11 @@ $ ergon work qxpj
 da34548b-56e9-41c2-98a8-7a0c1a8f4993
 ## Context
 
+These are the ancestor tasks which may help frame your work:
+
 - Build a demo
 
-## Task (demo/qxpj)
+## Your Task (demo/qxpj)
 
 API
 
@@ -60,9 +62,11 @@ $ cd other
 $ ergon prompt demo/qxpj
 ## Context
 
+These are the ancestor tasks which may help frame your work:
+
 - Build a demo
 
-## Task (demo/qxpj)
+## Your Task (demo/qxpj)
 
 API
 
@@ -105,9 +109,11 @@ FTFE
 $ ergon prompt demo/FTFE
 ## Context
 
+These are the ancestor tasks which may help frame your work:
+
 - Build a demo
 
-## Task (demo/FTFE)
+## Your Task (demo/FTFE)
 
 Docs
 

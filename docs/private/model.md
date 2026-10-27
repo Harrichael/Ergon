@@ -355,9 +355,10 @@ There are two prompts:
 
   ```
   ## Context
+  These are the ancestor tasks which may help frame your work:
   <the ancestors, root first: titles, with bodies indented below>
 
-  ## Task (<project>/<slug>)
+  ## Your Task (<project>/<slug>)
   <the task's intent>
   <non-deleted, non-cancelled descendants' intents, indented by depth>
 
@@ -374,7 +375,7 @@ There are two prompts:
 
   For several tasks, the ancestors of all of them are merged into one
   outline in tree order, and each task follows in tree order as
-  `## Task N of M (...)`, with its own subtasks.
+  `## Your Task N of M (...)`, with its own subtasks.
 
   The Choros section appears only when `choros here` succeeds in the
   session's folder: the one its tasks recorded, else the current one.

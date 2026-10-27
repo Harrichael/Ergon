@@ -488,12 +488,14 @@ mod tests {
             format!(
                 "## Context
 
+These are the ancestor tasks which may help frame your work:
+
 - Build a demo
   Project context.
   - Backend
     Rust services.
 
-## Task (demo/{b})
+## Your Task (demo/{b})
 
 Write the API
 
@@ -534,7 +536,7 @@ Ask the user how they'd like to start.
         assert!(leaf.ends_with(&format!(
             "        Versioned.
 
-## Task (demo/{n})
+## Your Task (demo/{n})
 
 Nested
 
@@ -577,7 +579,7 @@ Ask the user how they'd like to start.
         // Tasks taken on together are numbered.
         let ids = [tasks.live(&d).unwrap().id, tasks.live(&n).unwrap().id];
         let both = work_prompt(&tasks, &ids, None);
-        assert!(both.contains(&format!("## Task 1 of 2 (demo/{d})\n\nAuth\n")));
-        assert!(both.contains(&format!("## Task 2 of 2 (demo/{n})\n\nNested\n")));
+        assert!(both.contains(&format!("## Your Task 1 of 2 (demo/{d})\n\nAuth\n")));
+        assert!(both.contains(&format!("## Your Task 2 of 2 (demo/{n})\n\nNested\n")));
     }
 }

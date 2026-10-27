@@ -61,11 +61,13 @@ $ ergon work demo/FTFE
 9487b132-9170-4b0c-ad01-fba48316f5e9
 ## Context
 
+These are the ancestor tasks which may help frame your work:
+
 - Build a demo
   Project context.
   - Backend
 
-## Task (demo/FTFE)
+## Your Task (demo/FTFE)
 
 Write the API
 
@@ -142,10 +144,12 @@ $ ergon work qwpT
 1c00f751-1ae5-476d-b826-a7e779d4c793
 ## Context
 
+These are the ancestor tasks which may help frame your work:
+
 - Build a demo
   Project context.
 
-## Task (demo/qwpT)
+## Your Task (demo/qwpT)
 
 Blocked
 
@@ -215,10 +219,12 @@ qxpj
 $ ergon prompt qxpj
 ## Context
 
+These are the ancestor tasks which may help frame your work:
+
 - Second project
   Now with context.
 
-## Task (second/qxpj)
+## Your Task (second/qxpj)
 
 Docs
 
