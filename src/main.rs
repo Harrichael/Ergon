@@ -551,10 +551,7 @@ fn run(cli: Cli) -> Result<()> {
                     if t.0.is_empty() {
                         bail!("no tasks on stdin");
                     }
-                    // The pipe took claude's stdin; it gets the terminal back.
-                    let tty = std::fs::File::open("/dev/tty")
-                        .context("`ergon work -` needs a terminal for the session")?;
-                    (Some(t), Some(tty))
+                    (Some(t), Some(terminal()?))
                 }
                 None => (None, None),
             };
@@ -586,6 +583,23 @@ fn run(cli: Cli) -> Result<()> {
         }
     }
     Ok(())
+}
+
+/// The terminal, for claude's stdin when the pipe took ours: a copy of
+/// stdout or stderr, which the shell opened read-write on it. Not
+/// `/dev/tty`: macOS's kqueue refuses that device, and claude (on Bun)
+/// watches its stdin with kqueue.
+fn terminal() -> Result<std::fs::File> {
+    use std::io::IsTerminal;
+    use std::os::fd::AsFd;
+    let fd = if std::io::stdout().is_terminal() {
+        std::io::stdout().as_fd().try_clone_to_owned()?
+    } else if std::io::stderr().is_terminal() {
+        std::io::stderr().as_fd().try_clone_to_owned()?
+    } else {
+        bail!("`ergon work -` needs a terminal for the session");
+    };
+    Ok(fd.into())
 }
 
 /// The width to wrap to: `COLUMNS` when set, else the terminal's, else none.

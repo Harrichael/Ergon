@@ -312,8 +312,9 @@ taken on together.
 highlighted one; a refusal stays in the picker), or `ergon work -` to read
 them from stdin, so `ergon ls --attention ..3 | ergon work -` composes. From
 stdin it takes the first word of each line, split on commas, so `ls` rows
-read as their tasks; the session's stdin is then `/dev/tty`, refused if
-there is none, and an empty stdin starts nothing:
+read as their tasks; the session's stdin is then the terminal ergon's
+stdout or stderr is on (not `/dev/tty`, which macOS's kqueue refuses),
+refused if there is none, and an empty stdin starts nothing:
 
 - **Refused** if any task's effective status is closed, if the root is
   given with other tasks (planning isn't work), or if a task is given with
