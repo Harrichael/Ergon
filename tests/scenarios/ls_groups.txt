@@ -56,3 +56,16 @@ FTFE  Checkout
     9cDQ  p-  todo         Cards
     dFR6  p-  todo         Wallets
 bfLH  p-  todo         Rollout  (in: Deploy)
+
+# --ancestors shows every ancestor, from the root down, single chains too.
+$ ergon ls --ancestors
+root  Root
+  qxpj  p-  todo         Blocker
+  FTFE  Checkout
+    nHcx  p-  todo         Cart
+    pQyk  Payments
+      9cDQ  p-  todo         Cards
+      dFR6  p-  todo         Wallets
+  AENA  Ops
+    FubR  Deploy
+      bfLH  p-  todo         Rollout

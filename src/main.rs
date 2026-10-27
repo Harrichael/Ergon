@@ -118,8 +118,11 @@ enum Command {
         subtasks: bool,
         /// Group tasks under the parents they share, shown only where two or
         /// more listed tasks meet.
-        #[arg(long)]
+        #[arg(long, conflicts_with = "ancestors")]
         groups: bool,
+        /// Show tasks under all their ancestors, from the root down.
+        #[arg(long)]
+        ancestors: bool,
     },
     /// Print the project as an editable table, or apply an edited one
     ///
@@ -384,7 +387,7 @@ fn run(cli: Cli) -> Result<()> {
             let p = project_for(&conn, &task.iter().collect::<Vec<_>>())?;
             print!("{}", tree(&conn, &p, task.as_ref(), ls)?);
         }
-        Command::Ls { sort, subtasks, groups } => {
+        Command::Ls { sort, subtasks, groups, ancestors } => {
             let sort = match sort.as_deref() {
                 None => Default::default(),
                 Some([field, order @ ..]) => {
@@ -392,8 +395,13 @@ fn run(cli: Cli) -> Result<()> {
                 }
                 Some([]) => unreachable!("clap requires a field"),
             };
+            let nest = match (groups, ancestors) {
+                (true, _) => view::Nest::Groups,
+                (_, true) => view::Nest::Ancestors,
+                _ => view::Nest::Flat,
+            };
             let tasks = Tasks::load(&conn, &project_for(&conn, &[])?)?;
-            print!("{}", view::ls(&tasks, &Derived::compute(&tasks), sort, subtasks, groups));
+            print!("{}", view::ls(&tasks, &Derived::compute(&tasks), sort, subtasks, nest));
         }
         Command::Outline {
             apply: true,

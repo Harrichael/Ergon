@@ -233,9 +233,9 @@ fn write_tree(row: &Row, id: i64, depth: usize, out: &mut String) {
 }
 
 /// `ergon ls`: one row per task ready to start. With `subtasks`, each is
-/// followed by its subtasks, indented. With `groups`, tasks that share a
-/// parent sit under it; a parent is shown only where two or more of them meet.
-pub fn ls(tasks: &Tasks, derived: &Derived, sort: Sort, subtasks: bool, groups: bool) -> String {
+/// followed by its subtasks, indented. `nest` puts rows under their
+/// ancestors.
+pub fn ls(tasks: &Tasks, derived: &Derived, sort: Sort, subtasks: bool, nest: Nest) -> String {
     let ids = derived::ls(tasks, derived, sort);
     let shown = |id: i64| {
         let below = if subtasks { tasks.descendants(id) } else { Vec::new() };
@@ -244,10 +244,9 @@ pub fn ls(tasks: &Tasks, derived: &Derived, sort: Sort, subtasks: bool, groups: 
     let width = derived
         .sized()
         .then(|| size_width(derived, ids.iter().flat_map(|&id| shown(id))));
-    let members = if groups {
-        group_members(tasks, &ids)
-    } else {
-        HashMap::from([(None, ids)])
+    let members = match nest {
+        Nest::Flat => HashMap::from([(None, ids)]),
+        _ => group_members(tasks, &ids, nest),
     };
     let view = Ls { tasks, derived, width, subtasks, members };
     let mut out = String::new();
@@ -255,10 +254,20 @@ pub fn ls(tasks: &Tasks, derived: &Derived, sort: Sort, subtasks: bool, groups: 
     out
 }
 
+/// Which ancestors `ergon ls` shows its rows under.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum Nest {
+    Flat,
+    /// Only where two or more listed tasks meet: `--groups`.
+    Groups,
+    /// All of them, from the root down: `--ancestors`.
+    Ancestors,
+}
+
 /// What each group holds, groups and tasks alike, in the order their first
-/// task is listed; `None` is the top level. An ancestor groups when listed
-/// tasks reach it through two or more of its children.
-fn group_members(tasks: &Tasks, ids: &[i64]) -> HashMap<Option<i64>, Vec<i64>> {
+/// task is listed; `None` is the top level. With `Nest::Groups` an ancestor
+/// groups when listed tasks reach it through two or more of its children.
+fn group_members(tasks: &Tasks, ids: &[i64], nest: Nest) -> HashMap<Option<i64>, Vec<i64>> {
     let mut branches: HashMap<i64, HashSet<i64>> = HashMap::new();
     for &id in ids {
         let mut below = id;
@@ -270,13 +279,13 @@ fn group_members(tasks: &Tasks, ids: &[i64]) -> HashMap<Option<i64>, Vec<i64>> {
             below = a;
         }
     }
+    let shown = |a: &i64| match nest {
+        Nest::Ancestors => true,
+        _ => branches.get(a).is_some_and(|b| b.len() > 1),
+    };
     let mut members: HashMap<Option<i64>, Vec<i64>> = HashMap::new();
     for &id in ids {
-        let mut path: Vec<i64> = tasks
-            .ancestors(id)
-            .into_iter()
-            .filter(|a| branches.get(a).is_some_and(|b| b.len() > 1))
-            .collect();
+        let mut path: Vec<i64> = tasks.ancestors(id).into_iter().filter(shown).collect();
         path.reverse();
         path.push(id);
         let mut group = None;

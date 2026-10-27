@@ -385,12 +385,13 @@ ergon tree [<ref>] [--ls]
     Indented titles with slug, effective status, effective priority, size, and
     attention. --ls marks the tasks `ergon ls` lists with a ▸ gutter and a
     bold title.
-ergon ls [--sort FIELD [asc|desc]] [--subtasks] [--groups]
+ergon ls [--sort FIELD [asc|desc]] [--subtasks] [--groups | --ancestors]
     --subtasks follows each row with its subtasks, indented, in tree order.
     --groups nests rows under the ancestors they share: an ancestor is shown
     (slug and bold title) only where listed tasks reach it through two or
     more of its children, and groups follow the sort order of their first
-    task.
+    task. --ancestors nests the same way under every ancestor, the root
+    included.
 ergon outline [--json]
 ergon outline --apply [--dry-run]
 ergon outline --format
