@@ -1,5 +1,6 @@
-//! Choros landing sets, and which tasks they carry. Ergon stores none of
-//! this: it reads `choros status --json` each time. A set carries the tasks
+//! Choros landings, and which tasks they carry: landing sets, and the lands
+//! that went straight to main, which make no set. Ergon stores none of this:
+//! it reads `choros status --json` each time. A set carries the tasks
 //! its labels name (task refs, written by `choros land --label`); a set
 //! without labels carries the tasks whose session it was forked from.
 //! Labels win outright, since one session can take on many tasks and land
@@ -19,6 +20,8 @@ use crate::task::{self, Tasks};
 #[derive(Deserialize)]
 struct Status {
     queues: Vec<Queue>,
+    #[serde(default)]
+    instant: Vec<Instant>,
 }
 
 #[derive(Deserialize)]
@@ -38,6 +41,15 @@ struct Set {
 }
 
 #[derive(Deserialize)]
+struct Instant {
+    repo: String,
+    commit: String,
+    pr: Option<u64>,
+    sessions: Vec<String>,
+    labels: Vec<String>,
+}
+
+#[derive(Deserialize)]
 struct Pr {
     number: u64,
 }
@@ -48,13 +60,23 @@ struct SessionFork {
 }
 
 pub struct Landing {
-    pub queue: String,
-    pub n: u32,
+    pub at: At,
     pub repo: String,
     pub state: String,
     pub pr: Option<u64>,
     sessions: Vec<String>,
     labels: Vec<TaskRef>,
+}
+
+pub enum At {
+    Set {
+        queue: String,
+        n: u32,
+    },
+    /// Straight to main, through this commit; always merged.
+    Main {
+        commit: String,
+    },
 }
 
 impl Landing {
@@ -103,30 +125,37 @@ pub fn read(dir: &Path) -> Result<Option<Vec<Landing>>> {
     }
     let status: Status =
         serde_json::from_slice(&out.stdout).context("reading choros status --json")?;
-    Ok(Some(
-        status
-            .queues
-            .into_iter()
-            .flat_map(|q| {
-                q.sets.into_iter().map(move |s| Landing {
-                    queue: q.name.clone(),
-                    n: s.n,
-                    repo: s.repo,
-                    state: s.state,
-                    pr: s.pr.map(|p| p.number),
-                    sessions: s.sessions.into_iter().map(|f| f.source).collect(),
-                    // Labels that aren't project-qualified refs are some
-                    // other tool's.
-                    labels: s
-                        .labels
-                        .iter()
-                        .filter_map(|l| l.parse::<TaskRef>().ok())
-                        .filter(|r| r.project.is_some())
-                        .collect(),
-                })
-            })
-            .collect(),
-    ))
+    let sets = status.queues.into_iter().flat_map(|q| {
+        q.sets.into_iter().map(move |s| Landing {
+            at: At::Set {
+                queue: q.name.clone(),
+                n: s.n,
+            },
+            repo: s.repo,
+            state: s.state,
+            pr: s.pr.map(|p| p.number),
+            sessions: s.sessions.into_iter().map(|f| f.source).collect(),
+            labels: task_refs(&s.labels),
+        })
+    });
+    let instant = status.instant.into_iter().map(|i| Landing {
+        at: At::Main { commit: i.commit },
+        repo: i.repo,
+        state: "merged".into(),
+        pr: i.pr,
+        sessions: i.sessions,
+        labels: task_refs(&i.labels),
+    });
+    Ok(Some(sets.chain(instant).collect()))
+}
+
+/// Labels that aren't project-qualified refs are some other tool's.
+fn task_refs(labels: &[String]) -> Vec<TaskRef> {
+    labels
+        .iter()
+        .filter_map(|l| l.parse::<TaskRef>().ok())
+        .filter(|r| r.project.is_some())
+        .collect()
 }
 
 /// The directory to ask choros from for `id`: where its session, or its
@@ -179,9 +208,9 @@ pub fn tasks_of<'a>(landing: &Landing, projects: &'a [Tasks]) -> Vec<(&'a Tasks,
 
 /// The landing tasks whose landings have all merged, with the landing tasks
 /// under them, deepest first so no task is done before its subtasks. A
-/// task's landings are the sets that carry it or a task under it, read from
+/// task's landings are those that carry it or a task under it, read from
 /// the session folders of that subtree (`fallback` for tasks without one).
-/// A task no set carries stays landing: nothing says its work went anywhere.
+/// A task no landing carries stays landing: nothing says its work went anywhere.
 pub fn merged(tasks: &Tasks, fallback: &Path) -> Vec<i64> {
     let landing: Vec<i64> = tasks
         .all()

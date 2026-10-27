@@ -8,7 +8,7 @@ use anstyle::{AnsiColor, Style};
 
 use crate::derived::{self, Derived, Filter, Sort};
 use crate::fmt::timestamp;
-use crate::landings::{self, Landing};
+use crate::landings::{self, At, Landing};
 use crate::task::Tasks;
 
 const STORED: Style = Style::new().bold();
@@ -212,8 +212,8 @@ pub fn show(
                     format!("  ({})", others.join(", "))
                 };
                 let _ = writeln!(out, "  - {}{via}", landing_line(tl.landing));
-                if tl.landing.is_open() {
-                    let _ = writeln!(out, "    {}", open_command(tl.landing));
+                if let Some(open) = open_command(tl.landing) {
+                    let _ = writeln!(out, "    {open}");
                 }
             }
         }
@@ -226,11 +226,24 @@ fn landing_line(l: &Landing) -> String {
         Some(n) => format!("{} #{n}", l.repo),
         None => format!("{}, no PR", l.repo),
     };
-    format!("{}  landing-{}  {:<6}  {pr}", l.queue, l.n, l.state)
+    match &l.at {
+        At::Set { queue, n } => format!("{queue}  landing-{n}  {:<6}  {pr}", l.state),
+        At::Main { commit } => format!("main  {}  {:<6}  {pr}", short(commit), l.state),
+    }
 }
 
-fn open_command(l: &Landing) -> String {
-    format!("choros landing open {} --queue {}", l.n, l.queue)
+fn short(commit: &str) -> &str {
+    commit.get(..7).unwrap_or(commit)
+}
+
+/// How to reach an open set's landing; a land straight to main has none.
+fn open_command(l: &Landing) -> Option<String> {
+    match &l.at {
+        At::Set { queue, n } if l.is_open() => {
+            Some(format!("choros landing open {n} --queue {queue}"))
+        }
+        _ => None,
+    }
 }
 
 /// The landing sets of a PR, each with the tasks it carries.
@@ -238,8 +251,8 @@ pub fn pr_tasks(sets: &[&Landing], projects: &[Tasks]) -> String {
     let mut out = String::new();
     for l in sets {
         let _ = writeln!(out, "{}", landing_line(l));
-        if l.is_open() {
-            let _ = writeln!(out, "  {}", open_command(l));
+        if let Some(open) = open_command(l) {
+            let _ = writeln!(out, "  {open}");
         }
         let carried = landings::tasks_of(l, projects);
         if carried.is_empty() {

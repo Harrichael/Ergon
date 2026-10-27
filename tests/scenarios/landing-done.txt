@@ -1,4 +1,4 @@
-# A landing task becomes done once every set that carries it, or a task
+# A landing task becomes done once every landing that carries it, or a task
 # under it, has merged; ls and show check as they read. Only landing tasks
 # move: a session's sets can carry tasks that still have work to land.
 
@@ -106,3 +106,30 @@ Landings:
   - appq  landing-3  merged  app #114
   - appq  landing-4  merged  app #115
 demo/9cDQ done: its landings merged
+
+# A land straight to main makes no set; choros lists it under `instant`, and
+# it has merged by the time it's there.
+$ fake-choros <<EOF
+{
+  "queues": [],
+  "instant": [
+    {"repo": "app", "workspace": "w", "commit": "1c096c9d5e", "pr": null,
+     "labels": ["demo/qwpT"], "sessions": []}
+  ]
+}
+EOF
+$ ergon show qwpT
+demo/qwpT  Import
+status:    done
+priority:  p-
+blocked:   no
+parent:    demo/root  Build a demo
+created:   2025-10-09 08:53 (just now)
+updated:   2025-10-09 08:53 (just now)
+delete:    ergon rm demo/qwpT --subtasks 0 --dependents 0
+
+Import
+
+Landings:
+  - main  1c096c9  merged  app, no PR
+demo/qwpT done: its landings merged
