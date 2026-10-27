@@ -189,22 +189,7 @@ pub fn work(
     }
 
     let session = crate::uuid(&mut crate::rng(ids[0] as u64));
-    let dir = cwd
-        .to_str()
-        .with_context(|| format!("{} isn't valid UTF-8", cwd.display()))?;
-    for &id in &ids {
-        let task = tasks.get(id);
-        let new_status = if tasks.effective_status(id) == Status::Todo {
-            Some(Status::InProgress)
-        } else {
-            task.status
-        };
-        tx.execute(
-            "UPDATE tasks SET claude_session = ?1, claude_cwd = ?2, status = ?3, updated_at = ?4
-             WHERE id = ?5",
-            params![session, dir, new_status, crate::now(), id],
-        )?;
-    }
+    record(&tx, &tasks, &ids, &session, cwd)?;
     Tasks::load(&tx, project)?.validate().context("refused")?;
     tx.commit()?;
 
@@ -217,18 +202,90 @@ pub fn work(
     })
 }
 
+/// Records an already running session on tasks, as `ergon work` does when
+/// it starts one, so that `ergon work` resumes it from then on. Returns
+/// the tasks' references. A task can hold only one session, so one with
+/// another session is refused.
+pub fn attach(
+    conn: &mut Connection,
+    project: &Project,
+    slugs: &[String],
+    session: &str,
+    cwd: &Path,
+) -> Result<Vec<String>> {
+    let tx = conn.transaction()?;
+    let tasks = Tasks::load(&tx, project)?;
+    let ids = selection(&tasks, slugs)?;
+    for &id in &ids {
+        if let Some(other) = tasks.get(id).claude_session.as_deref().filter(|s| *s != session) {
+            let r = tasks.reference(id);
+            bail!("{r} already has session {other}; `ergon work {r}` resumes it");
+        }
+    }
+    // Claude Code resumes a conversation only from the directory it began
+    // in, which may not be where the session's shell is now.
+    let dir = conversation_file(session)
+        .and_then(|f| began_in(&f))
+        .unwrap_or_else(|| cwd.to_path_buf());
+    record(&tx, &tasks, &ids, session, &dir)?;
+    Tasks::load(&tx, project)?.validate().context("refused")?;
+    tx.commit()?;
+    Ok(ids.iter().map(|&id| tasks.reference(id)).collect())
+}
+
+/// Records `session` and its directory on the tasks, and starts the `todo`
+/// ones.
+fn record(tx: &Connection, tasks: &Tasks, ids: &[i64], session: &str, dir: &Path) -> Result<()> {
+    let dir = dir
+        .to_str()
+        .with_context(|| format!("{} isn't valid UTF-8", dir.display()))?;
+    for &id in ids {
+        let task = tasks.get(id);
+        let new_status = if tasks.effective_status(id) == Status::Todo {
+            Some(Status::InProgress)
+        } else {
+            task.status
+        };
+        tx.execute(
+            "UPDATE tasks SET claude_session = ?1, claude_cwd = ?2, status = ?3, updated_at = ?4
+             WHERE id = ?5",
+            params![session, dir, new_status, crate::now(), id],
+        )?;
+    }
+    Ok(())
+}
+
+/// The directory a saved conversation began in: the first `cwd` it records.
+fn began_in(conversation: &Path) -> Option<PathBuf> {
+    use std::io::BufRead;
+    let file = std::io::BufReader::new(std::fs::File::open(conversation).ok()?);
+    file.lines().map_while(Result::ok).find_map(|line| {
+        let entry: serde_json::Value = serde_json::from_str(&line).ok()?;
+        Some(PathBuf::from(entry.get("cwd")?.as_str()?))
+    })
+}
+
 /// Whether Claude Code saved `session`'s conversation: it keeps each as
 /// `projects/<dir>/<session>.jsonl` under `$CLAUDE_CONFIG_DIR`, else
 /// `~/.claude`. When there's no projects folder to look in, assume it did.
 fn conversation_saved(session: &str) -> bool {
+    projects_dir().is_none_or(|_| conversation_file(session).is_some())
+}
+
+fn conversation_file(session: &str) -> Option<PathBuf> {
+    let file = format!("{session}.jsonl");
+    std::fs::read_dir(projects_dir()?)
+        .ok()?
+        .flatten()
+        .map(|d| d.path().join(&file))
+        .find(|f| f.is_file())
+}
+
+fn projects_dir() -> Option<PathBuf> {
     let config = std::env::var_os("CLAUDE_CONFIG_DIR")
         .map(PathBuf::from)
-        .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".claude")));
-    let Some(Ok(projects)) = config.map(|c| std::fs::read_dir(c.join("projects"))) else {
-        return true;
-    };
-    let file = format!("{session}.jsonl");
-    projects.flatten().any(|d| d.path().join(&file).is_file())
+        .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".claude")))?;
+    Some(config.join("projects")).filter(|p| p.is_dir())
 }
 
 /// The prompt a session starts with: the planner's for the root, otherwise

@@ -1,0 +1,47 @@
+# attach records a session ergon didn't start, so ergon work resumes it.
+
+$ cd proj
+$ ergon init demo "Build a demo" --no-launch
+Created project demo in $ROOT/proj
+$ ergon add Backend
+qxpj
+$ CLAUDE_CODE_SESSION_ID=0b5e0b5e-0000-4000-8000-000000000001 ergon attach root
+attached session 0b5e0b5e-0000-4000-8000-000000000001 to demo/root; `ergon prompt demo/root` prints its instructions
+$ ergon show root
+...
+session:   0b5e0b5e-0000-4000-8000-000000000001 in $ROOT/proj
+...
+$ ergon work root
+[claude in $ROOT/proj]
+--resume
+0b5e0b5e-0000-4000-8000-000000000001
+
+# A task with another session keeps it.
+$ ergon attach qxpj --session 0b5e0b5e-0000-4000-8000-000000000002
+attached session 0b5e0b5e-0000-4000-8000-000000000002 to demo/qxpj; `ergon prompt demo/qxpj` prints its instructions
+$ ergon attach qxpj --session 0b5e0b5e-0000-4000-8000-000000000003
+error: demo/qxpj already has session 0b5e0b5e-0000-4000-8000-000000000002; `ergon work demo/qxpj` resumes it
+[exit 1]
+
+# A saved conversation is resumed from the directory it began in, not
+# from where its shell has wandered.
+$ ergon add API
+FTFE
+$ ergon add Docs
+nHcx
+$ ergon work FTFE
+...
+$ cd proj/sub
+$ ergon attach nHcx --session 9487b132-9170-4b0c-ad01-fba48316f5e9
+attached session 9487b132-9170-4b0c-ad01-fba48316f5e9 to demo/nHcx; `ergon prompt demo/nHcx` prints its instructions
+$ ergon show nHcx
+...
+session:   9487b132-9170-4b0c-ad01-fba48316f5e9 in $ROOT/proj
+...
+
+# Outside Claude Code, with no --session, there's nothing to attach.
+$ ergon add Tests
+pQyk
+$ ergon attach pQyk
+error: no session: run this inside Claude Code, or give --session
+[exit 1]

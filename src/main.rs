@@ -211,6 +211,17 @@ enum Command {
         #[arg(short, long)]
         interactive: bool,
     },
+    /// Record the Claude Code session you're in on a task, or on several
+    ///
+    /// For a session ergon didn't start: from then on, `ergon work` resumes
+    /// it, as if `ergon work` had started it. Run it from the session's Bash
+    /// tool, where Claude Code sets $CLAUDE_CODE_SESSION_ID.
+    Attach {
+        tasks: TaskRefs,
+        /// The session, instead of $CLAUDE_CODE_SESSION_ID.
+        #[arg(long)]
+        session: Option<String>,
+    },
     /// Print the prompt `ergon work` starts a session with
     ///
     /// Rendered from the tasks as they are now, not as they were when the
@@ -591,6 +602,19 @@ fn run(cli: Cli) -> Result<()> {
                 },
             };
             launch(l, tty)?;
+        }
+        Command::Attach { tasks, session } => {
+            let session = session
+                .or_else(|| std::env::var("CLAUDE_CODE_SESSION_ID").ok())
+                .filter(|s| !s.is_empty())
+                .context("no session: run this inside Claude Code, or give --session")?;
+            let p = project_for(&conn, &tasks.iter().collect::<Vec<_>>())?;
+            let refs = claude::attach(&mut conn, &p, &tasks.slugs(), &session, &cwd)?;
+            println!(
+                "attached session {session} to {}; `ergon prompt {}` prints its instructions",
+                refs.join(", "),
+                refs.join(",")
+            );
         }
         Command::Prompt { tasks } => {
             let p = project_for(&conn, &tasks.iter().collect::<Vec<_>>())?;
