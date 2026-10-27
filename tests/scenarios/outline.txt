@@ -19,28 +19,28 @@ $ ergon edit FTFE --status in_progress
 # ~blocked, then the title. `-` is an empty cell; `~` cells are calculated.
 # Titles show the nesting: the root's is bare, the rest indent under it.
 $ ergon outline
-# ergon demo ac299641
-root  in_progress  ~in_progress  -   -    -  -  -     -         Build a demo
-qxpj  todo         ~todo         p1  ~p1  -  -  -     -         - Backend
-FTFE  in_progress  ~in_progress  -   ~p1  -  -  -     -           - Write the API
-nHcx  -            ~in_progress  -   ~p1  -  -  -     -             - Document the API
-pQyk  todo         ~todo         -   -    -  -  FTFE  ~blocked  - Frontend
+# ergon demo 20829b51
+root  in_progress  ~in_progress  -   -    -  -  -  -  -     -         Build a demo
+qxpj  todo         ~todo         p1  ~p1  -  -  -  -  -     -         - Backend
+FTFE  in_progress  ~in_progress  -   ~p1  -  -  -  -  -     -           - Write the API
+nHcx  -            ~in_progress  -   ~p1  -  -  -  -  -     -             - Document the API
+pQyk  todo         ~todo         -   -    -  -  -  -  FTFE  ~blocked  - Frontend
 
 # For editors: the same text, and the task on each row.
 $ ergon outline --json
-{"project":"demo","version":"ac299641","text":"# ergon demo ac299641\nroot  in_progress  ~in_progress  -   -    -  -  -     -         Build a demo\nqxpj  todo         ~todo         p1  ~p1  -  -  -     -         - Backend\nFTFE  in_progress  ~in_progress  -   ~p1  -  -  -     -           - Write the API\nnHcx  -            ~in_progress  -   ~p1  -  -  -     -             - Document the API\npQyk  todo         ~todo         -   -    -  -  FTFE  ~blocked  - Frontend\n","tasks":[{"line":2,"slug":"root"},{"line":3,"slug":"qxpj"},{"line":4,"slug":"FTFE"},{"line":5,"slug":"nHcx"},{"line":6,"slug":"pQyk"}]}
+{"project":"demo","version":"20829b51","text":"# ergon demo 20829b51\nroot  in_progress  ~in_progress  -   -    -  -  -  -  -     -         Build a demo\nqxpj  todo         ~todo         p1  ~p1  -  -  -  -  -     -         - Backend\nFTFE  in_progress  ~in_progress  -   ~p1  -  -  -  -  -     -           - Write the API\nnHcx  -            ~in_progress  -   ~p1  -  -  -  -  -     -             - Document the API\npQyk  todo         ~todo         -   -    -  -  -  -  FTFE  ~blocked  - Frontend\n","tasks":[{"line":2,"slug":"root"},{"line":3,"slug":"qxpj"},{"line":4,"slug":"FTFE"},{"line":5,"slug":"nHcx"},{"line":6,"slug":"pQyk"}]}
 
 # Edit titles and priorities, add tasks (slug `-`; a top-level task with no
 # status is todo), change dependencies. A dry run prints the changes only.
 $ ergon outline --apply --dry-run <<EOF
-# ergon demo ac299641
-root  in_progress  ~in_progress  -   -    -  -  -     -         Build a demo
-qxpj  todo         ~todo         p1  ~p1  -  -  -     -         - Backend services
-FTFE  in_progress  ~in_progress  -   ~p1  -  -  -     -           - Write the API
-nHcx  -            ~in_progress  p3  ~p1  -  -  -     -             - Document the API
--     todo         -             p2  -    -  -  FTFE  -           - Write tests
-pQyk  todo         ~todo         -   -    -  -  -     ~blocked  - Frontend
--     -            -             -   -    -  -  -     -         - Docs
+# ergon demo 20829b51
+root  in_progress  ~in_progress  -   -    -  -  -  -  -     -         Build a demo
+qxpj  todo         ~todo         p1  ~p1  -  -  -  -  -     -         - Backend services
+FTFE  in_progress  ~in_progress  -   ~p1  -  -  -  -  -     -           - Write the API
+nHcx  -            ~in_progress  p3  ~p1  -  -  -  -  -     -             - Document the API
+-     todo         -             p2  -    -  -  -  -  FTFE  -           - Write tests
+pQyk  todo         ~todo         -   -    -  -  -  -  -     ~blocked  - Frontend
+-     -            -             -   -    -  -  -  -  -     -         - Docs
 EOF
 qxpj Backend: title -> Backend services
 nHcx Document the API: priority unset -> p3
@@ -49,21 +49,21 @@ add "Write tests" under qxpj
 pQyk Frontend: deps -FTFE
 add "Docs" at the top level
 $ ergon outline
-# ergon demo ac299641
-root  in_progress  ~in_progress  -   -    -  -  -     -         Build a demo
-qxpj  todo         ~todo         p1  ~p1  -  -  -     -         - Backend
-FTFE  in_progress  ~in_progress  -   ~p1  -  -  -     -           - Write the API
-nHcx  -            ~in_progress  -   ~p1  -  -  -     -             - Document the API
-pQyk  todo         ~todo         -   -    -  -  FTFE  ~blocked  - Frontend
+# ergon demo 20829b51
+root  in_progress  ~in_progress  -   -    -  -  -  -  -     -         Build a demo
+qxpj  todo         ~todo         p1  ~p1  -  -  -  -  -     -         - Backend
+FTFE  in_progress  ~in_progress  -   ~p1  -  -  -  -  -     -           - Write the API
+nHcx  -            ~in_progress  -   ~p1  -  -  -  -  -     -             - Document the API
+pQyk  todo         ~todo         -   -    -  -  -  -  FTFE  ~blocked  - Frontend
 $ ergon outline --apply <<EOF
-# ergon demo ac299641
-root  in_progress  ~in_progress  -   -    -  -  -     -         Build a demo
-qxpj  todo         ~todo         p1  ~p1  -  -  -     -         - Backend services
-FTFE  in_progress  ~in_progress  -   ~p1  -  -  -     -           - Write the API
-nHcx  -            ~in_progress  p3  ~p1  -  -  -     -             - Document the API
--     todo         -             p2  -    -  -  FTFE  -           - Write tests
-pQyk  todo         ~todo         -   -    -  -  -     ~blocked  - Frontend
--     -            -             -   -    -  -  -     -         - Docs
+# ergon demo 20829b51
+root  in_progress  ~in_progress  -   -    -  -  -  -  -     -         Build a demo
+qxpj  todo         ~todo         p1  ~p1  -  -  -  -  -     -         - Backend services
+FTFE  in_progress  ~in_progress  -   ~p1  -  -  -  -  -     -           - Write the API
+nHcx  -            ~in_progress  p3  ~p1  -  -  -  -  -     -             - Document the API
+-     todo         -             p2  -    -  -  -  -  FTFE  -           - Write tests
+pQyk  todo         ~todo         -   -    -  -  -  -  -     ~blocked  - Frontend
+-     -            -             -   -    -  -  -  -  -     -         - Docs
 EOF
 qxpj Backend: title -> Backend services
 nHcx Document the API: priority unset -> p3
@@ -72,14 +72,14 @@ add "Write tests" under qxpj
 pQyk Frontend: deps -FTFE
 add "Docs" at the top level
 $ ergon outline
-# ergon demo 6f816ed8
-root  in_progress  ~in_progress  -   -    -  -  -     -         Build a demo
-qxpj  todo         ~todo         p1  ~p1  -  -  -     -         - Backend services
-FTFE  in_progress  ~in_progress  -   ~p2  -  -  -     -           - Write the API
-nHcx  -            ~in_progress  p3  ~p3  -  -  -     -             - Document the API
-9cDQ  todo         ~todo         p2  ~p2  -  -  FTFE  ~blocked    - Write tests
-pQyk  todo         ~todo         -   -    -  -  -     -         - Frontend
-dFR6  todo         ~todo         -   -    -  -  -     -         - Docs
+# ergon demo 7f11456a
+root  in_progress  ~in_progress  -   -    -  -  -  -  -     -         Build a demo
+qxpj  todo         ~todo         p1  ~p1  -  -  -  -  -     -         - Backend services
+FTFE  in_progress  ~in_progress  -   ~p2  -  -  -  -  -     -           - Write the API
+nHcx  -            ~in_progress  p3  ~p3  -  -  -  -  -     -             - Document the API
+9cDQ  todo         ~todo         p2  ~p2  -  -  -  -  FTFE  ~blocked    - Write tests
+pQyk  todo         ~todo         -   -    -  -  -  -  -     -         - Frontend
+dFR6  todo         ~todo         -   -    -  -  -  -  -     -         - Docs
 
 # Editing the title keeps the rest of the intent.
 $ ergon show qxpj --intent
@@ -89,12 +89,12 @@ Details about the backend.
 
 # The project changed since that outline was printed, so it's refused.
 $ ergon outline --apply <<EOF
-# ergon demo ac299641
-root  in_progress  ~in_progress  -   -    -  -  -     -         Build a demo
-qxpj  todo         ~todo         p1  ~p1  -  -  -     -         - Backend
-FTFE  in_progress  ~in_progress  -   ~p1  -  -  -     -           - Write the API
-nHcx  -            ~in_progress  -   ~p1  -  -  -     -             - Document the API
-pQyk  todo         ~todo         -   -    -  -  FTFE  ~blocked  - Frontend
+# ergon demo 20829b51
+root  in_progress  ~in_progress  -   -    -  -  -  -  -     -         Build a demo
+qxpj  todo         ~todo         p1  ~p1  -  -  -  -  -     -         - Backend
+FTFE  in_progress  ~in_progress  -   ~p1  -  -  -  -  -     -           - Write the API
+nHcx  -            ~in_progress  -   ~p1  -  -  -  -  -     -             - Document the API
+pQyk  todo         ~todo         -   -    -  -  -  -  FTFE  ~blocked  - Frontend
 EOF
 error: demo changed since this outline was printed, and applying it would undo those changes; print it again and redo your edits
 [exit 1]
@@ -102,33 +102,33 @@ error: demo changed since this outline was printed, and applying it would undo t
 # Removing a row deletes the task with its subtasks, except the ones moved
 # elsewhere. Dependents are counted like `ergon show` counts them.
 $ ergon outline --apply <<EOF
-# ergon demo 6f816ed8
-root  in_progress  ~in_progress  -   -    -  -  -          -         Build a demo
-FTFE  in_progress  ~in_progress  -   ~p2  -  -  -          -         - Write the API
-nHcx  -            ~in_progress  p3  ~p3  -  -  -          -           - Document the API
-pQyk  todo         ~todo         -   -    -  -  dFR6,9cDQ  -         - Frontend
+# ergon demo 7f11456a
+root  in_progress  ~in_progress  -   -    -  -  -  -  -          -         Build a demo
+FTFE  in_progress  ~in_progress  -   ~p2  -  -  -  -  -          -         - Write the API
+nHcx  -            ~in_progress  p3  ~p3  -  -  -  -  -          -           - Document the API
+pQyk  todo         ~todo         -   -    -  -  -  -  dFR6,9cDQ  -         - Frontend
 EOF
 FTFE Write the API: move to the top level
 pQyk Frontend: deps +9cDQ +dFR6
 qxpj Backend services: delete, with its 1 subtask and 1 dependent
 dFR6 Docs: delete, with 1 dependent
 $ ergon outline
-# ergon demo e57657b0
-root  in_progress  ~in_progress  -   -    -  -  -  -         Build a demo
-FTFE  in_progress  ~in_progress  -   ~p3  -  -  -  -         - Write the API
-nHcx  -            ~in_progress  p3  ~p3  -  -  -  -           - Document the API
-pQyk  todo         ~todo         -   -    -  -  -  -         - Frontend
+# ergon demo 3be0194d
+root  in_progress  ~in_progress  -   -    -  -  -  -  -  -         Build a demo
+FTFE  in_progress  ~in_progress  -   ~p3  -  -  -  -  -  -         - Write the API
+nHcx  -            ~in_progress  p3  ~p3  -  -  -  -  -  -           - Document the API
+pQyk  todo         ~todo         -   -    -  -  -  -  -  -         - Frontend
 $ ergon restore qxpj
 Restored demo/qxpj
 Restored demo/9cDQ
 $ ergon outline
-# ergon demo 1a0053ee
-root  in_progress  ~in_progress  -   -    -  -  -     -         Build a demo
-qxpj  todo         ~todo         p1  ~p1  -  -  -     -         - Backend services
-9cDQ  todo         ~todo         p2  ~p2  -  -  FTFE  ~blocked    - Write tests
-FTFE  in_progress  ~in_progress  -   ~p2  -  -  -     -         - Write the API
-nHcx  -            ~in_progress  p3  ~p3  -  -  -     -           - Document the API
-pQyk  todo         ~todo         -   -    -  -  9cDQ  ~blocked  - Frontend
+# ergon demo 1496d57b
+root  in_progress  ~in_progress  -   -    -  -  -  -  -     -         Build a demo
+qxpj  todo         ~todo         p1  ~p1  -  -  -  -  -     -         - Backend services
+9cDQ  todo         ~todo         p2  ~p2  -  -  -  -  FTFE  ~blocked    - Write tests
+FTFE  in_progress  ~in_progress  -   ~p2  -  -  -  -  -     -         - Write the API
+nHcx  -            ~in_progress  p3  ~p3  -  -  -  -  -     -           - Document the API
+pQyk  todo         ~todo         -   -    -  -  -  -  9cDQ  ~blocked  - Frontend
 
 # Cancelling cancels unfinished subtasks with a status of their own, like
 # `ergon edit` does, unless the outline changes their status too.
@@ -137,90 +137,90 @@ qwpT
 $ ergon add "Load test" --parent qxpj --status todo
 AENA
 $ ergon outline
-# ergon demo 7f628796
-root  in_progress  ~in_progress  -   -    -  -  -     -         Build a demo
-qxpj  todo         ~todo         p1  ~p1  -  -  -     -         - Backend services
-9cDQ  todo         ~todo         p2  ~p2  -  -  FTFE  ~blocked    - Write tests
-qwpT  in_progress  ~in_progress  -   ~p1  -  -  -     -           - Write more tests
-AENA  todo         ~todo         -   ~p1  -  -  -     -           - Load test
-FTFE  in_progress  ~in_progress  -   ~p2  -  -  -     -         - Write the API
-nHcx  -            ~in_progress  p3  ~p3  -  -  -     -           - Document the API
-pQyk  todo         ~todo         -   -    -  -  9cDQ  ~blocked  - Frontend
+# ergon demo 6e267aea
+root  in_progress  ~in_progress  -   -    -  -  -  -  -     -         Build a demo
+qxpj  todo         ~todo         p1  ~p1  -  -  -  -  -     -         - Backend services
+9cDQ  todo         ~todo         p2  ~p2  -  -  -  -  FTFE  ~blocked    - Write tests
+qwpT  in_progress  ~in_progress  -   ~p1  -  -  -  -  -     -           - Write more tests
+AENA  todo         ~todo         -   ~p1  -  -  -  -  -     -           - Load test
+FTFE  in_progress  ~in_progress  -   ~p2  -  -  -  -  -     -         - Write the API
+nHcx  -            ~in_progress  p3  ~p3  -  -  -  -  -     -           - Document the API
+pQyk  todo         ~todo         -   -    -  -  -  -  9cDQ  ~blocked  - Frontend
 $ ergon outline --apply <<EOF
-# ergon demo 7f628796
-root  in_progress  ~in_progress  -   -    -  -  -     -         Build a demo
-qxpj  cancelled    ~todo         p1  ~p1  -  -  -     -         - Backend services
-9cDQ  todo         ~todo         p2  ~p2  -  -  FTFE  ~blocked    - Write tests
-qwpT  in_progress  ~in_progress  -   ~p1  -  -  -     -           - Write more tests
-AENA  done         ~todo         -   ~p1  -  -  -     -           - Load test
-FTFE  in_progress  ~in_progress  -   ~p2  -  -  -     -         - Write the API
-nHcx  -            ~in_progress  p3  ~p3  -  -  -     -           - Document the API
-pQyk  todo         ~todo         -   -    -  -  9cDQ  ~blocked  - Frontend
+# ergon demo 6e267aea
+root  in_progress  ~in_progress  -   -    -  -  -  -  -     -         Build a demo
+qxpj  cancelled    ~todo         p1  ~p1  -  -  -  -  -     -         - Backend services
+9cDQ  todo         ~todo         p2  ~p2  -  -  -  -  FTFE  ~blocked    - Write tests
+qwpT  in_progress  ~in_progress  -   ~p1  -  -  -  -  -     -           - Write more tests
+AENA  done         ~todo         -   ~p1  -  -  -  -  -     -           - Load test
+FTFE  in_progress  ~in_progress  -   ~p2  -  -  -  -  -     -         - Write the API
+nHcx  -            ~in_progress  p3  ~p3  -  -  -  -  -     -           - Document the API
+pQyk  todo         ~todo         -   -    -  -  -  -  9cDQ  ~blocked  - Frontend
 EOF
 qxpj Backend services: status todo -> cancelled
 AENA Load test: status todo -> done
 9cDQ Write tests: cancelled along with qxpj
 qwpT Write more tests: cancelled along with qxpj
 $ ergon outline
-# ergon demo c885625e
-root  in_progress  ~in_progress  -   -    -  -  -     -         Build a demo
-qxpj  cancelled    ~cancelled    p1  ~p1  -  -  -     -         - Backend services
-9cDQ  cancelled    ~cancelled    p2  ~p2  -  -  FTFE  ~blocked    - Write tests
-qwpT  cancelled    ~cancelled    -   ~p1  -  -  -     -           - Write more tests
-AENA  done         ~done         -   ~p1  -  -  -     -           - Load test
-FTFE  in_progress  ~in_progress  -   ~p3  -  -  -     -         - Write the API
-nHcx  -            ~in_progress  p3  ~p3  -  -  -     -           - Document the API
-pQyk  todo         ~todo         -   -    -  -  9cDQ  -         - Frontend
+# ergon demo 1ddad6e1
+root  in_progress  ~in_progress  -   -    -  -  -  -  -     -         Build a demo
+qxpj  cancelled    ~cancelled    p1  ~p1  -  -  -  -  -     -         - Backend services
+9cDQ  cancelled    ~cancelled    p2  ~p2  -  -  -  -  FTFE  ~blocked    - Write tests
+qwpT  cancelled    ~cancelled    -   ~p1  -  -  -  -  -     -           - Write more tests
+AENA  done         ~done         -   ~p1  -  -  -  -  -     -           - Load test
+FTFE  in_progress  ~in_progress  -   ~p3  -  -  -  -  -     -         - Write the API
+nHcx  -            ~in_progress  p3  ~p3  -  -  -  -  -     -           - Document the API
+pQyk  todo         ~todo         -   -    -  -  -  -  9cDQ  -         - Frontend
 
 # All or nothing: one refused change and nothing is applied.
 $ ergon outline --apply <<EOF
-# ergon demo c885625e
-root  in_progress  ~in_progress  -   -    -  -  -     -         Build a demo
-qxpj  cancelled    ~cancelled    p1  ~p1  -  -  -     -         - Backend services
-9cDQ  cancelled    ~cancelled    p2  ~p2  -  -  FTFE  ~blocked    - Write tests
-qwpT  cancelled    ~cancelled    -   ~p1  -  -  -     -           - Write more tests
-AENA  done         ~done         -   ~p1  -  -  -     -           - Load test
-FTFE  done         ~in_progress  -   ~p3  -  -  -     -         - Write the API
-nHcx  todo         ~in_progress  p3  ~p3  -  -  -     -           - Document the API
-pQyk  todo         ~todo         -   -    -  -  9cDQ  -         - Frontend (web)
+# ergon demo 1ddad6e1
+root  in_progress  ~in_progress  -   -    -  -  -  -  -     -         Build a demo
+qxpj  cancelled    ~cancelled    p1  ~p1  -  -  -  -  -     -         - Backend services
+9cDQ  cancelled    ~cancelled    p2  ~p2  -  -  -  -  FTFE  ~blocked    - Write tests
+qwpT  cancelled    ~cancelled    -   ~p1  -  -  -  -  -     -           - Write more tests
+AENA  done         ~done         -   ~p1  -  -  -  -  -     -           - Load test
+FTFE  done         ~in_progress  -   ~p3  -  -  -  -  -     -         - Write the API
+nHcx  todo         ~in_progress  p3  ~p3  -  -  -  -  -     -           - Document the API
+pQyk  todo         ~todo         -   -    -  -  -  -  9cDQ  -         - Frontend (web)
 EOF
 error: refused: demo/FTFE is done, so its subtask demo/nHcx can't be todo
 [exit 1]
 $ ergon outline
-# ergon demo c885625e
-root  in_progress  ~in_progress  -   -    -  -  -     -         Build a demo
-qxpj  cancelled    ~cancelled    p1  ~p1  -  -  -     -         - Backend services
-9cDQ  cancelled    ~cancelled    p2  ~p2  -  -  FTFE  ~blocked    - Write tests
-qwpT  cancelled    ~cancelled    -   ~p1  -  -  -     -           - Write more tests
-AENA  done         ~done         -   ~p1  -  -  -     -           - Load test
-FTFE  in_progress  ~in_progress  -   ~p3  -  -  -     -         - Write the API
-nHcx  -            ~in_progress  p3  ~p3  -  -  -     -           - Document the API
-pQyk  todo         ~todo         -   -    -  -  9cDQ  -         - Frontend
+# ergon demo 1ddad6e1
+root  in_progress  ~in_progress  -   -    -  -  -  -  -     -         Build a demo
+qxpj  cancelled    ~cancelled    p1  ~p1  -  -  -  -  -     -         - Backend services
+9cDQ  cancelled    ~cancelled    p2  ~p2  -  -  -  -  FTFE  ~blocked    - Write tests
+qwpT  cancelled    ~cancelled    -   ~p1  -  -  -  -  -     -           - Write more tests
+AENA  done         ~done         -   ~p1  -  -  -  -  -     -           - Load test
+FTFE  in_progress  ~in_progress  -   ~p3  -  -  -  -  -     -         - Write the API
+nHcx  -            ~in_progress  p3  ~p3  -  -  -  -  -     -           - Document the API
+pQyk  todo         ~todo         -   -    -  -  -  -  9cDQ  -         - Frontend
 
 # Sibling order carries no meaning, but it's kept.
 $ ergon outline --apply <<EOF
-# ergon demo c885625e
-root  in_progress  ~in_progress  -   -    -  -  -     -         Build a demo
-pQyk  todo         ~todo         -   -    -  -  9cDQ  -         - Frontend
-FTFE  in_progress  ~in_progress  -   ~p3  -  -  -     -         - Write the API
-nHcx  -            ~in_progress  p3  ~p3  -  -  -     -           - Document the API
-qxpj  cancelled    ~cancelled    p1  ~p1  -  -  -     -         - Backend services
-AENA  done         ~done         -   ~p1  -  -  -     -           - Load test
-qwpT  cancelled    ~cancelled    -   ~p1  -  -  -     -           - Write more tests
-9cDQ  cancelled    ~cancelled    p2  ~p2  -  -  FTFE  ~blocked    - Write tests
+# ergon demo 1ddad6e1
+root  in_progress  ~in_progress  -   -    -  -  -  -  -     -         Build a demo
+pQyk  todo         ~todo         -   -    -  -  -  -  9cDQ  -         - Frontend
+FTFE  in_progress  ~in_progress  -   ~p3  -  -  -  -  -     -         - Write the API
+nHcx  -            ~in_progress  p3  ~p3  -  -  -  -  -     -           - Document the API
+qxpj  cancelled    ~cancelled    p1  ~p1  -  -  -  -  -     -         - Backend services
+AENA  done         ~done         -   ~p1  -  -  -  -  -     -           - Load test
+qwpT  cancelled    ~cancelled    -   ~p1  -  -  -  -  -     -           - Write more tests
+9cDQ  cancelled    ~cancelled    p2  ~p2  -  -  -  -  FTFE  ~blocked    - Write tests
 EOF
 reorder top-level tasks
 qxpj Backend services: reorder subtasks
 $ ergon outline
-# ergon demo c7c9ee82
-root  in_progress  ~in_progress  -   -    -  -  -     -         Build a demo
-pQyk  todo         ~todo         -   -    -  -  9cDQ  -         - Frontend
-FTFE  in_progress  ~in_progress  -   ~p3  -  -  -     -         - Write the API
-nHcx  -            ~in_progress  p3  ~p3  -  -  -     -           - Document the API
-qxpj  cancelled    ~cancelled    p1  ~p1  -  -  -     -         - Backend services
-AENA  done         ~done         -   ~p1  -  -  -     -           - Load test
-qwpT  cancelled    ~cancelled    -   ~p1  -  -  -     -           - Write more tests
-9cDQ  cancelled    ~cancelled    p2  ~p2  -  -  FTFE  ~blocked    - Write tests
+# ergon demo e83ae7c3
+root  in_progress  ~in_progress  -   -    -  -  -  -  -     -         Build a demo
+pQyk  todo         ~todo         -   -    -  -  -  -  9cDQ  -         - Frontend
+FTFE  in_progress  ~in_progress  -   ~p3  -  -  -  -  -     -         - Write the API
+nHcx  -            ~in_progress  p3  ~p3  -  -  -  -  -     -           - Document the API
+qxpj  cancelled    ~cancelled    p1  ~p1  -  -  -  -  -     -         - Backend services
+AENA  done         ~done         -   ~p1  -  -  -  -  -     -           - Load test
+qwpT  cancelled    ~cancelled    -   ~p1  -  -  -  -  -     -           - Write more tests
+9cDQ  cancelled    ~cancelled    p2  ~p2  -  -  -  -  FTFE  ~blocked    - Write tests
 $ ergon tree
 root  in_progress  p-  Build a demo
   pQyk  todo         p-  Frontend
@@ -236,88 +236,88 @@ $ ergon add Deploy
 FubR
 $ ergon mv FTFE qxpj
 $ ergon outline
-# ergon demo 398273fe
-root  in_progress  ~in_progress  -   -    -  -  -     -         Build a demo
-pQyk  todo         ~todo         -   -    -  -  9cDQ  -         - Frontend
-qxpj  cancelled    ~cancelled    p1  ~p1  -  -  -     -         - Backend services
-AENA  done         ~done         -   ~p1  -  -  -     -           - Load test
-qwpT  cancelled    ~cancelled    -   ~p1  -  -  -     -           - Write more tests
-9cDQ  cancelled    ~cancelled    p2  ~p2  -  -  FTFE  ~blocked    - Write tests
-FTFE  in_progress  ~in_progress  -   ~p3  -  -  -     -           - Write the API
-nHcx  -            ~in_progress  p3  ~p3  -  -  -     -             - Document the API
-FubR  todo         ~todo         -   -    -  -  -     -         - Deploy
+# ergon demo 925ed25f
+root  in_progress  ~in_progress  -   -    -  -  -  -  -     -         Build a demo
+pQyk  todo         ~todo         -   -    -  -  -  -  9cDQ  -         - Frontend
+qxpj  cancelled    ~cancelled    p1  ~p1  -  -  -  -  -     -         - Backend services
+AENA  done         ~done         -   ~p1  -  -  -  -  -     -           - Load test
+qwpT  cancelled    ~cancelled    -   ~p1  -  -  -  -  -     -           - Write more tests
+9cDQ  cancelled    ~cancelled    p2  ~p2  -  -  -  -  FTFE  ~blocked    - Write tests
+FTFE  in_progress  ~in_progress  -   ~p3  -  -  -  -  -     -           - Write the API
+nHcx  -            ~in_progress  p3  ~p3  -  -  -  -  -     -             - Document the API
+FubR  todo         ~todo         -   -    -  -  -  -  -     -         - Deploy
 
 # Mistakes are reported by line.
 $ ergon outline --apply <<EOF
-# ergon demo 398273fe
-root  in_progress  ~in_progress  -  -  -  -  -     -         Build a demo
-pQyk  todo         ~todo         -  -  -  -  9cDQ  -         - Frontend
-pQyk  todo         ~todo         -  -  -  -  9cDQ  -         - Frontend again
+# ergon demo 925ed25f
+root  in_progress  ~in_progress  -  -  -  -  -  -  -     -         Build a demo
+pQyk  todo         ~todo         -  -  -  -  -  -  9cDQ  -         - Frontend
+pQyk  todo         ~todo         -  -  -  -  -  -  9cDQ  -         - Frontend again
 EOF
 error: line 4, slug: pQyk is already on line 3
 [exit 1]
 $ ergon outline --apply <<EOF
-# ergon demo 398273fe
-root  in_progress  ~in_progress  -  -  -  -  -  -         Build a demo
-dFR6  todo         ~todo         -  -  -  -  -  -         - Docs
+# ergon demo 925ed25f
+root  in_progress  ~in_progress  -  -  -  -  -  -  -  -         Build a demo
+dFR6  todo         ~todo         -  -  -  -  -  -  -  -         - Docs
 EOF
 error: line 3, slug: dFR6 is deleted; restore it with `ergon restore dFR6` first
 [exit 1]
 $ ergon outline --apply <<EOF
-# ergon demo 398273fe
-root  in_progress  ~in_progress  -  -  -  -  -     -         Build a demo
-pQyk  todo         ~todo         -  -  -  -  4444  -         - Frontend
+# ergon demo 925ed25f
+root  in_progress  ~in_progress  -  -  -  -  -  -  -     -         Build a demo
+pQyk  todo         ~todo         -  -  -  -  -  -  4444  -         - Frontend
 EOF
 error: line 3, deps: no task 4444 to depend on
 [exit 1]
 $ ergon outline --apply <<EOF
-# ergon demo 398273fe
-root  in_progress  ~in_progress  -  -  -  -  -  -         Build a demo
-pQyk  todo         ~todo         -  -  -  -  Z  -         - Frontend
+# ergon demo 925ed25f
+root  in_progress  ~in_progress  -  -  -  -  -  -  -  -         Build a demo
+pQyk  todo         ~todo         -  -  -  -  -  -  Z  -         - Frontend
 EOF
 error: line 3, deps: invalid slug "Z"
 [exit 1]
 $ ergon outline --apply <<EOF
-# ergon demo 398273fe
-root  in_progress  ~in_progress  -  -  -  -  -     -         Build a demo
-pQyk  todo         ~done         -  -  -  -  9cDQ  -         - Frontend
+# ergon demo 925ed25f
+root  in_progress  ~in_progress  -  -  -  -  -  -  -     -         Build a demo
+pQyk  todo         ~done         -  -  -  -  -  -  9cDQ  -         - Frontend
 EOF
 error: line 3, ~status: it's calculated, so ~done can't be edited; change the status cell instead
 [exit 1]
 $ ergon outline --apply <<EOF
-# ergon demo 398273fe
-pQyk  todo         ~todo         -  -  -  -  9cDQ  -         - Frontend
-root  in_progress  ~in_progress  -  -  -  -  -     -         Build a demo
+# ergon demo 925ed25f
+pQyk  todo         ~todo         -  -  -  -  -  -  9cDQ  -         - Frontend
+root  in_progress  ~in_progress  -  -  -  -  -  -  -     -         Build a demo
 EOF
 error: line 2: the first row must be the root's
 [exit 1]
 $ ergon outline --apply <<EOF
-# ergon demo 398273fe
-root  in_progress  ~in_progress  -  -  -  -  -  -         Build a demo
-pQyk  todo  ~todo  -  -  -  -  9cDQ  -         Frontend
+# ergon demo 925ed25f
+root  in_progress  ~in_progress  -  -  -  -  -  -  -  -         Build a demo
+pQyk  todo  ~todo  -  -  -  -  -  -  9cDQ  -         Frontend
 EOF
 error: line 3, title: it must start with `- `, since the task is under the root
 [exit 1]
 $ ergon outline --apply <<EOF
-# ergon demo 398273fe
-root  in_progress  ~in_progress  -  -  -  -  -  -         Build a demo
-pQyk  todo  ~todo  -  -  -  -  9cDQ  -         -
+# ergon demo 925ed25f
+root  in_progress  ~in_progress  -  -  -  -  -  -  -  -         Build a demo
+pQyk  todo  ~todo  -  -  -  -  -  -  9cDQ  -         -
 EOF
 error: line 3, title: missing
 [exit 1]
 $ ergon outline --apply <<EOF
-# ergon demo 398273fe
-pQyk  todo  ~todo  -  -  -  -  9cDQ  -
+# ergon demo 925ed25f
+pQyk  todo  ~todo  -  -  -  -  -  -  9cDQ  -
 EOF
-error: line 2: expected 9 cells, then the title; use - for an empty cell
+error: line 2: expected 11 cells, then the title; use - for an empty cell
 [exit 1]
 $ ergon outline --apply <<EOF
-root  in_progress  ~in_progress  -  -  -  -  -  -         Build a demo
+root  in_progress  ~in_progress  -  -  -  -  -  -  -  -         Build a demo
 EOF
 error: line 1: expected the header `# ergon <project> <version>`
 [exit 1]
 $ ergon outline --apply --project other <<EOF
-# ergon demo 398273fe
+# ergon demo 925ed25f
 EOF
 error: the outline is for project demo, not other
 [exit 1]
@@ -326,26 +326,26 @@ error: the outline is for project demo, not other
 # a row typed in under Deploy. Titles are re-indented from the nesting
 # they show. It applies nothing.
 $ ergon outline --format <<EOF
-# ergon demo 398273fe
-root  in_progress  ~in_progress  -   -    -  -  -     -         Build a demo
-pQyk  todo         ~todo         -   -    -  -  9cDQ,FubR  -         - Frontend
-qxpj  cancelled    ~cancelled    p1  ~p1  -  -  -     -         - Backend services
-AENA  done         ~done         -   ~p1  -  -  -     -           - Load test
-qwpT  cancelled    ~cancelled    -   ~p1  -  -  -     -           - Write more tests
-9cDQ  cancelled    ~cancelled    p2  ~p2  -  -  FTFE  ~blocked    - Write tests
-FTFE  in_progress  ~in_progress  -   ~p3  -  -  -     -           - Write the API
-nHcx  -            ~in_progress  p3  ~p3  -  -  -     -             - Document the API
-FubR  todo         ~todo         -   -    -  -  -     -         - Deploy
--  todo  -  -  -  -  -  -  -           - Announce it
+# ergon demo 925ed25f
+root  in_progress  ~in_progress  -   -    -  -  -  -  -     -         Build a demo
+pQyk  todo         ~todo         -   -    -  -  -  -  9cDQ,FubR  -         - Frontend
+qxpj  cancelled    ~cancelled    p1  ~p1  -  -  -  -  -     -         - Backend services
+AENA  done         ~done         -   ~p1  -  -  -  -  -     -           - Load test
+qwpT  cancelled    ~cancelled    -   ~p1  -  -  -  -  -     -           - Write more tests
+9cDQ  cancelled    ~cancelled    p2  ~p2  -  -  -  -  FTFE  ~blocked    - Write tests
+FTFE  in_progress  ~in_progress  -   ~p3  -  -  -  -  -     -           - Write the API
+nHcx  -            ~in_progress  p3  ~p3  -  -  -  -  -     -             - Document the API
+FubR  todo         ~todo         -   -    -  -  -  -  -     -         - Deploy
+-  todo  -  -  -  -  -  -  -  -  -           - Announce it
 EOF
-# ergon demo 398273fe
-root  in_progress  ~in_progress  -   -    -  -  -          -         Build a demo
-pQyk  todo         ~todo         -   -    -  -  9cDQ,FubR  -         - Frontend
-qxpj  cancelled    ~cancelled    p1  ~p1  -  -  -          -         - Backend services
-AENA  done         ~done         -   ~p1  -  -  -          -           - Load test
-qwpT  cancelled    ~cancelled    -   ~p1  -  -  -          -           - Write more tests
-9cDQ  cancelled    ~cancelled    p2  ~p2  -  -  FTFE       ~blocked    - Write tests
-FTFE  in_progress  ~in_progress  -   ~p3  -  -  -          -           - Write the API
-nHcx  -            ~in_progress  p3  ~p3  -  -  -          -             - Document the API
-FubR  todo         ~todo         -   -    -  -  -          -         - Deploy
--     todo         -             -   -    -  -  -          -           - Announce it
+# ergon demo 925ed25f
+root  in_progress  ~in_progress  -   -    -  -  -  -  -          -         Build a demo
+pQyk  todo         ~todo         -   -    -  -  -  -  9cDQ,FubR  -         - Frontend
+qxpj  cancelled    ~cancelled    p1  ~p1  -  -  -  -  -          -         - Backend services
+AENA  done         ~done         -   ~p1  -  -  -  -  -          -           - Load test
+qwpT  cancelled    ~cancelled    -   ~p1  -  -  -  -  -          -           - Write more tests
+9cDQ  cancelled    ~cancelled    p2  ~p2  -  -  -  -  FTFE       ~blocked    - Write tests
+FTFE  in_progress  ~in_progress  -   ~p3  -  -  -  -  -          -           - Write the API
+nHcx  -            ~in_progress  p3  ~p3  -  -  -  -  -          -             - Document the API
+FubR  todo         ~todo         -   -    -  -  -  -  -          -         - Deploy
+-     todo         -             -   -    -  -  -  -  -          -           - Announce it

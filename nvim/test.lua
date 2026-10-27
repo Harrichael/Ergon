@@ -53,7 +53,7 @@ local function set_row(slug, text)
   vim.api.nvim_buf_set_lines(0, i - 1, i, false, { text })
 end
 
--- `line` with cell `n` (1-9) replaced. The row shifts; its nesting doesn't.
+-- `line` with cell `n` (1-11) replaced. The row shifts; its nesting doesn't.
 local function set_cell(line, n, value)
   local pos = 1
   for i = 1, n do
@@ -139,7 +139,7 @@ eq(ergon("tree", "pQyk"):match("Write tests$"), "Write tests", "not applied")
 answer = 1
 
 -- A mistake is marked in red on its cell, with the cursor there.
-set_row("pQyk", set_cell(row("pQyk"), 8, "4444"))
+set_row("pQyk", set_cell(row("pQyk"), 10, "4444"))
 local bad, p = row("pQyk")
 vim.api.nvim_win_set_cursor(0, { 1, 0 })
 vim.cmd.write()
@@ -187,7 +187,7 @@ eq(row("pQyk"), top, "no further")
 
 -- :ErgonFormat lines widened and hand-edited rows up again.
 vim.cmd("e!")
-set_row("FTFE", set_cell(row("FTFE"), 8, "pQyk"))
+set_row("FTFE", set_cell(row("FTFE"), 10, "pQyk"))
 assert(title_col(row("FTFE")) ~= title_col(row("pQyk")), "widened row out of line")
 vim.cmd("ErgonFormat")
 eq(title_col(row("FTFE")), title_col(row("pQyk")), "siblings line up again")

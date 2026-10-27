@@ -4,11 +4,11 @@ Edit an ergon project's tasks in a neovim buffer, one task per row.
 
 ```
 # ergon demo 1a2b3c4d
-root  in_progress  ~in_progress  -   -    -  ~8/13+  -     -         Build a demo
-qxpj  todo         ~todo         p1  ~p1  -  ~8/13+  -     -         - Backend
-FTFE  in_progress  ~in_progress  -   ~p1  5  ~5      -     -           - Write the API
--     todo         -             p2  -    -  -       FTFE  -           - Write tests
-pQyk  done         ~done         -   -    8  ~0/8    -     -         - Frontend
+root  in_progress  ~in_progress  -   -    -  ~8/13+  -   ~a7  -     -         Build a demo
+qxpj  todo         ~todo         p1  ~p1  -  ~8/13+  -   ~a7  -     -         - Backend
+FTFE  in_progress  ~in_progress  -   ~p1  5  ~5      a7  ~a7  -     -           - Write the API
+-     todo         -             p2  -    -  -       a2  -    FTFE  -           - Write tests
+pQyk  done         ~done         -   -    8  ~0/8    a3  ~a3  -     -         - Frontend
 ```
 
 ## Install
@@ -33,14 +33,17 @@ use {
 `:Ergon` opens the project named by the nearest `.ergon` file. `:Ergon <project>`
 opens another one; it completes project names.
 
-Each row is nine cells, then the title: slug, status, ~status, priority,
-~priority, size, ~size, deps, ~blocked. `-` is an empty cell.
+Each row is eleven cells, then the title: slug, status, ~status, priority,
+~priority, size, ~size, attention, ~attention, deps, ~blocked. `-` is an empty
+cell.
 
 - **Stored cells** are yours to edit: status (`todo`, `in_progress`,
   `landing`, `done`, `cancelled`, or `-` to follow the parent's), priority
-  (`p0`..`p4`), size (a Fibonacci number) and deps (slugs, comma-separated).
+  (`p0`..`p4`), size (a Fibonacci number), attention (`a1`..`a10`) and deps
+  (slugs, comma-separated).
 - **`~` cells** are calculated: the actual status, the effective priority, the
-  size added up from subtasks, and `~blocked`. Editing one is refused.
+  size added up from subtasks, the effective attention (`-` when unknown), and
+  `~blocked`. Editing one is refused.
 - **Nesting** is the title's indentation under the root's. `>>` and `<<` (and
   `>`, `<` on a selection) move the title, not the row. `dd` then `p` moves a
   subtree.

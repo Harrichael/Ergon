@@ -103,15 +103,16 @@ enum Command {
     Ls,
     /// Print the project as an editable table, or apply an edited one
     ///
-    /// Each row is one task: nine cells, then the title.
+    /// Each row is one task: eleven cells, then the title.
     ///
-    ///     <slug> <status> ~<status> <priority> ~<priority> <size> ~<size> <deps> ~blocked <title>
+    ///     <slug> <status> ~<status> <priority> ~<priority> <size> ~<size> <attention> ~<attention> <deps> ~blocked <title>
     ///
     /// `-` is an empty cell. Cells starting with `~` are calculated: the
     /// actual status, the effective priority, the size added up from
-    /// subtasks, and whether the task is blocked. Editing one is refused.
-    /// Status `-` follows the parent's; priority is `p0`..`p4`; size is a
-    /// Fibonacci number; deps are slugs, comma-separated.
+    /// subtasks, the effective attention (empty when unknown), and whether
+    /// the task is blocked. Editing one is refused. Status `-` follows the
+    /// parent's; priority is `p0`..`p4`; size is a Fibonacci number;
+    /// attention is `a1`..`a10`; deps are slugs, comma-separated.
     ///
     /// The title is the intent's first line; editing it keeps the rest of the
     /// intent. The root's comes first and bare; every other title starts with

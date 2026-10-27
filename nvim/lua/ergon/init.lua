@@ -66,12 +66,19 @@ local function to_lines(text)
   return lines
 end
 
+-- The columns of a row, in the order ergon names them in errors.
+local CELLS = {
+  slug = 1, status = 2, ["~status"] = 3, priority = 4, ["~priority"] = 5,
+  size = 6, ["~size"] = 7, attention = 8, ["~attention"] = 9, deps = 10,
+  ["~blocked"] = 11, title = 12,
+}
+
 -- Where a row's title starts, and how many of the spaces before it may go:
--- nesting counts from the end of the ~blocked column, the ninth cell, which
+-- nesting counts from the end of the ~blocked column, the last cell, which
 -- is padded to 8 wide. Nil for a row that isn't a task's.
 local function title_at(line)
   local pos, last = 1, nil
-  for _ = 1, 9 do
+  for _ = 1, CELLS["~blocked"] do
     local s, e = line:find("%S+", pos)
     if not s then
       return nil
@@ -214,16 +221,10 @@ local function load_intent(buf)
   set_text(buf, to_lines(out))
 end
 
--- The columns of a row, in the order ergon names them in errors.
-local CELLS = {
-  slug = 1, status = 2, ["~status"] = 3, priority = 4, ["~priority"] = 5,
-  size = 6, ["~size"] = 7, deps = 8, ["~blocked"] = 9, title = 10,
-}
-
--- The 0-based column span of cell `n` (10: the title) on `line`.
+-- The 0-based column span of cell `n` (CELLS.title: the title) on `line`.
 local function cell_span(line, n)
   local pos = 1
-  for i = 1, 9 do
+  for i = 1, CELLS["~blocked"] do
     local s, e = line:find("%S+", pos)
     if not s then
       return 0, #line

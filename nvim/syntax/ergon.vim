@@ -1,6 +1,6 @@
-" An ergon outline: a header, then one row per task: nine cells (slug,
-" status, ~status, priority, ~priority, size, ~size, deps, ~blocked) and the
-" title. `-` is an empty cell; `~` cells are calculated.
+" An ergon outline: a header, then one row per task: eleven cells (slug,
+" status, ~status, priority, ~priority, size, ~size, attention, ~attention,
+" deps, ~blocked) and the title. `-` is an empty cell; `~` cells are calculated.
 if exists("b:current_syntax")
   finish
 endif

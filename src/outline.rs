@@ -3,15 +3,16 @@
 //!
 //! ```text
 //! # ergon demo 1a2b3c4d
-//! root  in_progress  ~in_progress  -   -    -  ~8/13+  -     -         Root
-//! qxpj  todo         ~todo         p1  ~p1  -  ~8/13+  -     -         - Backend
-//! FTFE  -            ~todo         -   ~p1  5  ~5      -     -           - Write the API
-//! pQyk  todo         ~todo         -   -    -  -       FTFE  ~blocked  - Frontend
+//! root  in_progress  ~in_progress  -   -    -  ~8/13+  -   ~a7  -     -         Root
+//! qxpj  todo         ~todo         p1  ~p1  -  ~8/13+  -   ~a7  -     -         - Backend
+//! FTFE  -            ~todo         -   ~p1  5  ~5      a7  ~a7  -     -           - Write the API
+//! pQyk  todo         ~todo         -   -    -  -       a2  ~a2  FTFE  ~blocked  - Frontend
 //! ```
 //!
-//! A row is nine cells, then the title: slug, status, ~status, priority,
-//! ~priority, size, ~size, deps (comma-separated slugs) and ~blocked. `-` is an
-//! empty cell, so a row splits by position whatever it holds. Cells starting
+//! A row is eleven cells, then the title: slug, status, ~status, priority,
+//! ~priority, size, ~size, attention, ~attention, deps (comma-separated slugs)
+//! and ~blocked. `-` is an empty cell, so a row splits by position whatever it
+//! holds; an empty ~attention is unknown. Cells starting
 //! with `~` are calculated, and editing one is refused. A new task's slug is
 //! `-`, and its calculated cells are ignored.
 //!
@@ -39,20 +40,21 @@ use serde::Serialize;
 use crate::derived::Derived;
 use crate::project::Project;
 use crate::slug;
-use crate::task::{Status, Tasks, parse_priority, parse_size};
+use crate::task::{Status, Tasks, parse_attention, parse_priority, parse_size};
 
 const BLOCKED: &str = "~blocked";
 
 /// Cells before the title: slug, status, ~status, priority, ~priority, size,
-/// ~size, deps, ~blocked.
-const CELLS: usize = 9;
+/// ~size, attention, ~attention, deps, ~blocked.
+const CELLS: usize = 11;
 
 /// Which cells are calculated, with their names for errors.
-const CALCULATED: [(usize, &str, &str); 4] = [
+const CALCULATED: [(usize, &str, &str); 5] = [
     (2, "~status", "status"),
     (4, "~priority", "priority"),
     (6, "~size", "size"),
-    (8, "~blocked", "deps"),
+    (8, "~attention", "attention"),
+    (10, "~blocked", "deps"),
 ];
 
 /// The intent's first line, uncapped: the part of the intent an outline row
@@ -82,7 +84,7 @@ fn or_dash(s: Option<String>) -> String {
     s.unwrap_or_else(|| "-".into())
 }
 
-/// A task's nine cells, as rendered.
+/// A task's cells, as rendered.
 fn cells(tasks: &Tasks, derived: &Derived, id: i64) -> [String; CELLS] {
     let t = tasks.get(id);
     let deps: Vec<&str> = tasks
@@ -98,6 +100,8 @@ fn cells(tasks: &Tasks, derived: &Derived, id: i64) -> [String; CELLS] {
         or_dash(derived.priority(id).map(|p| format!("~p{p}"))),
         or_dash(t.size.map(|n| n.to_string())),
         or_dash(derived.size(id).map(|s| format!("~{}", s.label()))),
+        or_dash(t.attention.map(|a| format!("a{a}"))),
+        or_dash(derived.attention(id).map(|a| format!("~a{a}"))),
         or_dash((!deps.is_empty()).then(|| deps.join(","))),
         if derived.is_blocked(id) { BLOCKED } else { "-" }.to_string(),
     ]
@@ -246,6 +250,7 @@ struct Line {
     status: Option<Status>,
     priority: Option<u8>,
     size: Option<u32>,
+    attention: Option<u8>,
     deps: Vec<String>,
     /// The calculated cells as written, by cell index.
     calculated: Vec<(usize, String)>,
@@ -261,7 +266,7 @@ fn cell<T>(no: usize, name: &str, c: &str, parse: impl Fn(&str) -> Result<T>) ->
         .with_context(|| format!("line {no}, {name}"))
 }
 
-/// A row split into its nine cells, its title, and the title's level: 0 for
+/// A row split into its cells, its title, and the title's level: 0 for
 /// a bare title (the root's), otherwise one more than its indentation.
 struct Split<'a> {
     cells: Vec<&'a str>,
@@ -303,7 +308,15 @@ fn split_row(no: usize, raw: &str) -> Result<Split<'_>> {
     })
 }
 
-/// Parses one row: nine cells split on whitespace, then the title.
+/// `a1`..`a10`, as the outline writes an attention.
+fn parse_outline_attention(s: &str) -> Result<u8> {
+    match s.strip_prefix('a') {
+        Some(n) => parse_attention(n),
+        None => bail!("invalid attention {s:?}: expected a1 to a10"),
+    }
+}
+
+/// Parses one row: its cells split on whitespace, then the title.
 fn parse_line(no: usize, raw: &str) -> Result<Line> {
     let Split {
         cells,
@@ -315,7 +328,7 @@ fn parse_line(no: usize, raw: &str) -> Result<Line> {
         s if s == slug::ROOT || slug::is_valid(s) => Some(s.to_string()),
         s => bail!("line {no}, slug: invalid slug {s:?}; use - for a new task"),
     };
-    let deps = match cells[7] {
+    let deps = match cells[9] {
         "-" => Vec::new(),
         list => {
             let list: Vec<String> = list
@@ -336,6 +349,7 @@ fn parse_line(no: usize, raw: &str) -> Result<Line> {
         status: cell(no, "status", cells[1], Status::parse)?,
         priority: cell(no, "priority", cells[3], parse_priority)?,
         size: cell(no, "size", cells[5], parse_size)?,
+        attention: cell(no, "attention", cells[7], parse_outline_attention)?,
         deps,
         calculated: CALCULATED
             .iter()
@@ -493,7 +507,12 @@ fn size_label(n: Option<u32>) -> String {
     n.map_or("unset".into(), |n| n.to_string())
 }
 
-/// Applies a row's title, status, priority and size to an existing task,
+fn attention_label(a: Option<u8>) -> String {
+    a.map_or("unset".into(), |a| format!("a{a}"))
+}
+
+/// Applies a row's title, status, priority, size and attention to an
+/// existing task,
 /// describing each change under `label`.
 fn edit_fields(
     conn: &Connection,
@@ -530,11 +549,28 @@ fn edit_fields(
             size_label(line.size)
         ));
     }
-    if (&intent, status, line.priority, line.size) != (&t.intent, t.status, t.priority, t.size) {
+    if line.attention != t.attention {
+        out.push(format!(
+            "{label}: attention {} -> {}",
+            attention_label(t.attention),
+            attention_label(line.attention)
+        ));
+    }
+    if (&intent, status, line.priority, line.size, line.attention)
+        != (&t.intent, t.status, t.priority, t.size, t.attention)
+    {
         conn.execute(
-            "UPDATE tasks SET intent = ?1, status = ?2, priority = ?3, size = ?4,
-             updated_at = ?5 WHERE id = ?6",
-            params![intent, status, line.priority, line.size, now, t.id],
+            "UPDATE tasks SET intent = ?1, status = ?2, priority = ?3, size = ?4, attention = ?5,
+             updated_at = ?6 WHERE id = ?7",
+            params![
+                intent,
+                status,
+                line.priority,
+                line.size,
+                line.attention,
+                now,
+                t.id
+            ],
         )?;
     }
     Ok(())
@@ -583,9 +619,9 @@ fn apply_nodes(
                     .context("couldn't find an unused slug")?;
                 new_slugs.insert(slug.clone());
                 conn.execute(
-                    "INSERT INTO tasks (project_id, slug, parent_id, intent, status, priority, size, created_at, updated_at, position)
-                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?8, ?9)",
-                    params![tasks.project.id, slug, parent, line.title, status, line.priority, line.size, now, positions[i]],
+                    "INSERT INTO tasks (project_id, slug, parent_id, intent, status, priority, size, attention, created_at, updated_at, position)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?9, ?10)",
+                    params![tasks.project.id, slug, parent, line.title, status, line.priority, line.size, line.attention, now, positions[i]],
                 )?;
                 let name = format!("\"{}\"", line.title);
                 out.push(format!("add {name} {place}"));
@@ -811,35 +847,40 @@ mod tests {
     #[test]
     fn parses_rows() {
         let l = parse(
-            "FTFE  in_progress  ~in_progress  p1  ~p1  5  ~5  FTFE,nHcx  -           - 3 bugs ~p1 - left",
+            "FTFE  in_progress  ~in_progress  p1  ~p1  5  ~5  a7  ~a9  FTFE,nHcx  -           - 3 bugs ~p1 - left",
         );
         assert_eq!(l.slug.as_deref(), Some("FTFE"));
         assert_eq!(l.status, Some(Status::InProgress));
-        assert_eq!((l.priority, l.size), (Some(1), Some(5)));
+        assert_eq!(
+            (l.priority, l.size, l.attention),
+            (Some(1), Some(5), Some(7))
+        );
         assert_eq!(l.deps, ["FTFE", "nHcx"]);
         assert_eq!(l.title, "3 bugs ~p1 - left");
         assert_eq!(l.level, 3);
 
         let widened = parse(
-            "FTFE  in_progress  ~in_progress  p1  ~p1  5  ~5  FTFE,nHcx,pQyk  -           - Title",
+            "FTFE  in_progress  ~in_progress  p1  ~p1  5  ~5  a7  ~a9  FTFE,nHcx,pQyk  -           - Title",
         );
         assert_eq!(widened.level, 3);
-        let blocked = parse("FTFE  -  ~todo  -  -  -  -  -  ~blocked    - Title");
+        let blocked = parse("FTFE  -  ~todo  -  -  -  -  -  -  -  ~blocked    - Title");
         assert_eq!(blocked.level, 3);
         assert_eq!(blocked.status, None);
 
-        let root = parse("root  in_progress  ~in_progress  -  -  -  -  -  -         Root");
+        let root = parse("root  in_progress  ~in_progress  -  -  -  -  -  -  -  -         Root");
         assert_eq!((root.level, root.title.as_str()), (0, "Root"));
-        let new = parse("-  todo  -  -  -  -  -  -  -         - Write tests");
+        let new = parse("-  todo  -  -  -  -  -  -  -  -  -         - Write tests");
         assert_eq!((new.slug, new.level), (None, 1));
 
         for bad in [
-            "FTFE  todo  ~todo  -  -  -  -  -  -  - Title",
-            "FTFE  todo  ~todo  -  -  4  -  -  -         - Title",
-            "FTFE  todo  ~todo  p9  -  -  -  -  -         - Title",
-            "FTFE  open  ~todo  -  -  -  -  -  -         - Title",
-            "FTFE  todo  ~todo  -  -  -  -  oops!  -         - Title",
-            "FTFE  todo  ~todo  -  -  -  -  -  -         - ",
+            "FTFE  todo  ~todo  -  -  -  -  -  -  -  -  - Title",
+            "FTFE  todo  ~todo  -  -  4  -  -  -  -  -         - Title",
+            "FTFE  todo  ~todo  p9  -  -  -  -  -  -  -         - Title",
+            "FTFE  open  ~todo  -  -  -  -  -  -  -  -         - Title",
+            "FTFE  todo  ~todo  -  -  -  -  -  -  oops!  -         - Title",
+            "FTFE  todo  ~todo  -  -  -  -  -  -  -  -         - ",
+            "FTFE  todo  ~todo  -  -  -  -  7  -  -  -         - Title",
+            "FTFE  todo  ~todo  -  -  -  -  a11  -  -  -         - Title",
         ] {
             assert!(parse_line(3, bad).is_err(), "{bad}");
         }

@@ -112,3 +112,33 @@ error: invalid value '0' for '--attention <ATTENTION>': invalid attention "0": e
 
 For more information, try '--help'.
 [exit 2]
+
+# The outline shows attention as a1..a10, beside its calculated value, and
+# edits it like any stored cell; an empty ~attention is unknown.
+$ ergon outline
+# ergon demo d2fb02e6
+root  in_progress  ~in_progress  -  -  -  -  -   -    -  -         Root
+qxpj  todo         ~todo         -  -  -  -  -   -    -  -         - Epic
+FTFE  -            ~todo         -  -  -  -  -   -    -  -           - API
+pQyk  done         ~done         -  -  -  -  a9  ~a9  -  -             - Pick the auth provider
+nHcx  -            ~todo         -  -  -  -  a2  ~a2  -  -           - UI
+$ ergon outline --apply <<EOF
+# ergon demo d2fb02e6
+root  in_progress  ~in_progress  -  -  -  -  -   -    -  -         Root
+qxpj  todo         ~todo         -  -  -  -  -   -    -  -         - Epic
+FTFE  -            ~todo         -  -  -  -  a5  -    -  -           - API
+pQyk  done         ~done         -  -  -  -  a9  ~a9  -  -             - Pick the auth provider
+nHcx  -            ~todo         -  -  -  -  -   ~a2  -  -           - UI
+-     -            -             -  -  -  -  a1  -    -  -           - Docs
+EOF
+FTFE API: attention unset -> a5
+nHcx UI: attention a2 -> unset
+add "Docs" under qxpj
+$ ergon outline
+# ergon demo 14b3295c
+root  in_progress  ~in_progress  -  -  -  -  -   -    -  -         Root
+qxpj  todo         ~todo         -  -  -  -  -   -    -  -         - Epic
+FTFE  -            ~todo         -  -  -  -  a5  ~a5  -  -           - API
+pQyk  done         ~done         -  -  -  -  a9  ~a9  -  -             - Pick the auth provider
+nHcx  -            ~todo         -  -  -  -  -   -    -  -           - UI
+9cDQ  -            ~todo         -  -  -  -  a1  ~a1  -  -           - Docs

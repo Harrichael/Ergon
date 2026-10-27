@@ -82,20 +82,20 @@ root  in_progress  p-  8/13  Root
 
 # The outline carries stored sizes, and calculated ones as ~ cells.
 $ ergon outline
-# ergon demo 73ad186b
-root  in_progress  ~in_progress  -  -  -  ~8/13  -  -         Root
-qxpj  todo         ~todo         -  -  -  ~8/13  -  -         - Epic
-FTFE  done         ~done         -  -  5  ~0/5   -  -           - API
-nHcx  -            ~done         -  -  -  -      -  -             - Routes
-pQyk  -            ~todo         -  -  8  ~8     -  -           - UI
-9cDQ  cancelled    ~cancelled    -  -  -  -      -  -           - Docs
+# ergon demo 90757421
+root  in_progress  ~in_progress  -  -  -  ~8/13  -  -  -  -         Root
+qxpj  todo         ~todo         -  -  -  ~8/13  -  -  -  -         - Epic
+FTFE  done         ~done         -  -  5  ~0/5   -  -  -  -           - API
+nHcx  -            ~done         -  -  -  -      -  -  -  -             - Routes
+pQyk  -            ~todo         -  -  8  ~8     -  -  -  -           - UI
+9cDQ  cancelled    ~cancelled    -  -  -  -      -  -  -  -           - Docs
 $ ergon outline --apply <<EOF
-# ergon demo 73ad186b
-root  in_progress  ~in_progress  -  -  -  ~8/13  -  -         Root
-qxpj  todo         ~todo         -  -  -  ~8/13  -  -         - Epic
-FTFE  done         ~done         -  -  5  ~0/5   -  -           - API
-nHcx  -            ~done         -  -  -  -      -  -             - Routes
-pQyk  -            ~todo         -  -  13  ~8     -  -           - UI
-9cDQ  cancelled    ~cancelled    -  -  -  -      -  -           - Docs
+# ergon demo 90757421
+root  in_progress  ~in_progress  -  -  -  ~8/13  -  -  -  -         Root
+qxpj  todo         ~todo         -  -  -  ~8/13  -  -  -  -         - Epic
+FTFE  done         ~done         -  -  5  ~0/5  -  -   -  -           - API
+nHcx  -            ~done         -  -  -  -  -  -      -  -             - Routes
+pQyk  -            ~todo         -  -  13  ~8  -  -     -  -           - UI
+9cDQ  cancelled    ~cancelled    -  -  -  -  -  -      -  -           - Docs
 EOF
 pQyk UI: size 8 -> 13
