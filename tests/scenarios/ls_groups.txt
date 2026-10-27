@@ -1,0 +1,58 @@
+# ergon ls --groups puts listed tasks under the parents they share. A parent
+# shows only where two or more listed tasks meet below it; one with a single
+# listed task under it stays out, and the row names it as usual.
+
+$ ergon init demo Root --no-launch
+Created project demo in $ROOT
+$ ergon add Blocker
+qxpj
+$ ergon add Checkout
+FTFE
+$ ergon add Cart --parent FTFE
+nHcx
+$ ergon add Payments --parent FTFE
+pQyk
+$ ergon add Cards --parent pQyk
+9cDQ
+$ ergon add Wallets --parent pQyk
+dFR6
+$ ergon add Refunds --parent pQyk
+qwpT
+$ ergon add Ops
+AENA
+$ ergon add Deploy --parent AENA
+FubR
+$ ergon add Canary --parent FubR
+LuM4
+$ ergon add Rollout --parent FubR
+bfLH
+
+$ ergon add Badge --parent nHcx
+Hwgf
+# Refunds and Canary wait on Blocker, so Checkout, Payments, Ops and Deploy
+# split into their ready parts.
+$ ergon dep add qwpT qxpj
+$ ergon dep add LuM4 qxpj
+$ ergon ls
+qxpj  p-  todo         Blocker
+nHcx  p-  todo         Cart  (in: Checkout)
+9cDQ  p-  todo         Cards  (in: Payments)
+dFR6  p-  todo         Wallets  (in: Payments)
+bfLH  p-  todo         Rollout  (in: Deploy)
+$ ergon ls --groups
+qxpj  p-  todo         Blocker
+FTFE  Checkout
+  nHcx  p-  todo         Cart
+  pQyk  Payments
+    9cDQ  p-  todo         Cards
+    dFR6  p-  todo         Wallets
+bfLH  p-  todo         Rollout  (in: Deploy)
+$ ergon ls --groups --subtasks
+qxpj  p-  todo         Blocker
+FTFE  Checkout
+  nHcx  p-  todo         Cart
+    Hwgf  p-  todo         Badge
+  pQyk  Payments
+    9cDQ  p-  todo         Cards
+    dFR6  p-  todo         Wallets
+bfLH  p-  todo         Rollout  (in: Deploy)

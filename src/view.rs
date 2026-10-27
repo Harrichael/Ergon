@@ -1,7 +1,7 @@
 //! Plain-text renderings of tasks. Output may contain ANSI styles; print it
 //! through `anstream`, which strips them when they aren't supported.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::fmt::Write;
 
 use anstyle::{AnsiColor, Style};
@@ -13,6 +13,7 @@ use crate::task::Tasks;
 const STORED: Style = Style::new().bold();
 const INFERRED: Style = AnsiColor::Cyan.on_default();
 const DIM: Style = Style::new().dimmed();
+const GROUP: Style = Style::new().bold();
 
 /// Effective priority, bold if stored and cyan if inferred.
 fn priority(tasks: &Tasks, derived: &Derived, id: i64) -> String {
@@ -231,9 +232,10 @@ fn write_tree(row: &Row, id: i64, depth: usize, out: &mut String) {
     }
 }
 
-/// `ergon ls`: one row per task ready to start, each followed by its
-/// subtasks, indented, when `subtasks` is set.
-pub fn ls(tasks: &Tasks, derived: &Derived, sort: Sort, subtasks: bool) -> String {
+/// `ergon ls`: one row per task ready to start. With `subtasks`, each is
+/// followed by its subtasks, indented. With `groups`, tasks that share a
+/// parent sit under it; a parent is shown only where two or more of them meet.
+pub fn ls(tasks: &Tasks, derived: &Derived, sort: Sort, subtasks: bool, groups: bool) -> String {
     let ids = derived::ls(tasks, derived, sort);
     let shown = |id: i64| {
         let below = if subtasks { tasks.descendants(id) } else { Vec::new() };
@@ -242,17 +244,80 @@ pub fn ls(tasks: &Tasks, derived: &Derived, sort: Sort, subtasks: bool) -> Strin
     let width = derived
         .sized()
         .then(|| size_width(derived, ids.iter().flat_map(|&id| shown(id))));
+    let members = if groups {
+        group_members(tasks, &ids)
+    } else {
+        HashMap::from([(None, ids)])
+    };
+    let view = Ls { tasks, derived, width, subtasks, members };
     let mut out = String::new();
-    for id in ids {
-        out += &ls_row(tasks, derived, id, width);
-        out.push('\n');
-        if subtasks {
-            for c in tasks.children(id) {
-                write_ls_subtask(tasks, derived, c.id, 1, width, &mut out);
+    view.write(None, 0, &mut out);
+    out
+}
+
+/// What each group holds, groups and tasks alike, in the order their first
+/// task is listed; `None` is the top level. An ancestor groups when listed
+/// tasks reach it through two or more of its children.
+fn group_members(tasks: &Tasks, ids: &[i64]) -> HashMap<Option<i64>, Vec<i64>> {
+    let mut branches: HashMap<i64, HashSet<i64>> = HashMap::new();
+    for &id in ids {
+        let mut below = id;
+        for a in tasks.ancestors(id) {
+            if tasks.get(a).is_root() {
+                break;
+            }
+            branches.entry(a).or_default().insert(below);
+            below = a;
+        }
+    }
+    let mut members: HashMap<Option<i64>, Vec<i64>> = HashMap::new();
+    for &id in ids {
+        let mut path: Vec<i64> = tasks
+            .ancestors(id)
+            .into_iter()
+            .filter(|a| branches.get(a).is_some_and(|b| b.len() > 1))
+            .collect();
+        path.reverse();
+        path.push(id);
+        let mut group = None;
+        for node in path {
+            let list = members.entry(group).or_default();
+            if !list.contains(&node) {
+                list.push(node);
+            }
+            group = Some(node);
+        }
+    }
+    members
+}
+
+struct Ls<'a> {
+    tasks: &'a Tasks,
+    derived: &'a Derived,
+    width: Option<usize>,
+    subtasks: bool,
+    members: HashMap<Option<i64>, Vec<i64>>,
+}
+
+impl Ls<'_> {
+    fn write(&self, group: Option<i64>, depth: usize, out: &mut String) {
+        let pad = "  ".repeat(depth);
+        for &id in self.members.get(&group).into_iter().flatten() {
+            if self.members.contains_key(&Some(id)) {
+                let t = self.tasks.get(id);
+                let _ = writeln!(out, "{pad}{}  {GROUP}{}{GROUP:#}", t.slug, t.title());
+                self.write(Some(id), depth + 1, out);
+                continue;
+            }
+            let row = ls_row(self.tasks, self.derived, id, self.width, group);
+            let _ = writeln!(out, "{pad}{row}");
+            if self.subtasks {
+                for c in self.tasks.children(id) {
+                    write_ls_subtask(self.tasks, self.derived, c.id, depth + 1, self.width, out);
+                }
             }
         }
     }
-    out
 }
 
 fn write_ls_subtask(
@@ -292,14 +357,16 @@ pub fn ls_rows(tasks: &Tasks, derived: &Derived, sort: Sort) -> Vec<(i64, String
         .sized()
         .then(|| size_width(derived, ids.iter().copied()));
     ids.into_iter()
-        .map(|id| (id, ls_row(tasks, derived, id, width)))
+        .map(|id| (id, ls_row(tasks, derived, id, width, None)))
         .collect()
 }
 
-fn ls_row(tasks: &Tasks, derived: &Derived, id: i64, width: Option<usize>) -> String {
+/// One `ls` row; its parent is named unless it's the root or the `group`
+/// the row is shown under.
+fn ls_row(tasks: &Tasks, derived: &Derived, id: i64, width: Option<usize>, group: Option<i64>) -> String {
     let t = tasks.get(id);
     let context = match t.parent_id.map(|p| tasks.get(p)) {
-        Some(p) if !p.is_root() => format!("  {DIM}(in: {}){DIM:#}", p.title()),
+        Some(p) if !p.is_root() && Some(p.id) != group => format!("  {DIM}(in: {}){DIM:#}", p.title()),
         _ => String::new(),
     };
     let size = width.map_or(String::new(), |w| format!("{}  ", size(derived, id, w)));

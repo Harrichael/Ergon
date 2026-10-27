@@ -116,6 +116,10 @@ enum Command {
         /// Show each task's subtasks under it, indented.
         #[arg(long)]
         subtasks: bool,
+        /// Group tasks under the parents they share, shown only where two or
+        /// more listed tasks meet.
+        #[arg(long)]
+        groups: bool,
     },
     /// Print the project as an editable table, or apply an edited one
     ///
@@ -380,7 +384,7 @@ fn run(cli: Cli) -> Result<()> {
             let p = project_for(&conn, &task.iter().collect::<Vec<_>>())?;
             print!("{}", tree(&conn, &p, task.as_ref(), ls)?);
         }
-        Command::Ls { sort, subtasks } => {
+        Command::Ls { sort, subtasks, groups } => {
             let sort = match sort.as_deref() {
                 None => Default::default(),
                 Some([field, order @ ..]) => {
@@ -389,7 +393,7 @@ fn run(cli: Cli) -> Result<()> {
                 Some([]) => unreachable!("clap requires a field"),
             };
             let tasks = Tasks::load(&conn, &project_for(&conn, &[])?)?;
-            print!("{}", view::ls(&tasks, &Derived::compute(&tasks), sort, subtasks));
+            print!("{}", view::ls(&tasks, &Derived::compute(&tasks), sort, subtasks, groups));
         }
         Command::Outline {
             apply: true,
