@@ -173,14 +173,11 @@ pub fn work(
         // or quit at once): there is nothing to resume, so start it again.
         let fresh = format!("session {session} was never saved; starting it again");
         let warning = Some(warning.map_or(fresh.clone(), |w| format!("{w}\nwarning: {fresh}")));
+        let prompt = prompt(&tasks, &ids, &dir);
         return Ok(Launch {
             program,
             cwd: dir,
-            args: vec![
-                "--session-id".into(),
-                session.to_string(),
-                prompt(&tasks, &ids),
-            ],
+            args: vec!["--session-id".into(), session.to_string(), prompt],
             warning,
         });
     }
@@ -190,7 +187,7 @@ pub fn work(
     Tasks::load(&tx, project)?.validate().context("refused")?;
     tx.commit()?;
 
-    let prompt = prompt(&tasks, &ids);
+    let prompt = prompt(&tasks, &ids, cwd);
     Ok(Launch {
         program,
         cwd: cwd.to_path_buf(),
@@ -293,12 +290,36 @@ fn projects_dir() -> Option<PathBuf> {
 /// The prompt a session starts with: the planner's for the root, otherwise
 /// the work session's for the tasks, as `selection` returns them. Rendered
 /// from the tasks as they are now, so a session that lost it, to compaction
-/// say, gets back an up-to-date copy.
-pub fn prompt(tasks: &Tasks, ids: &[i64]) -> String {
+/// say, gets back an up-to-date copy. `cwd` is where a session that hasn't
+/// begun yet would.
+pub fn prompt(tasks: &Tasks, ids: &[i64], cwd: &Path) -> String {
     match ids {
         [id] if tasks.get(*id).is_root() => planner_prompt(tasks),
-        _ => work_prompt(tasks, ids, on_path(Path::new("choros")).is_some()),
+        _ => {
+            // The tasks' own session, not an ancestor's: the root's is the
+            // planner's, which may have run anywhere.
+            let dir = ids
+                .iter()
+                .find_map(|&id| tasks.get(id).claude_cwd.as_deref())
+                .map(Path::new)
+                .filter(|d| d.is_dir())
+                .unwrap_or(cwd);
+            work_prompt(tasks, ids, choros_here(dir).as_deref())
+        }
     }
+}
+
+/// What `choros here` says of `dir`, or `None` when choros isn't installed
+/// or `dir` isn't in a choros space.
+fn choros_here(dir: &Path) -> Option<String> {
+    on_path(Path::new("choros"))?;
+    let out = std::process::Command::new("choros")
+        .arg("here")
+        .current_dir(dir)
+        .output()
+        .ok()
+        .filter(|o| o.status.success())?;
+    Some(String::from_utf8_lossy(&out.stdout).trim_end().to_string())
 }
 
 fn planner_prompt(tasks: &Tasks) -> String {
@@ -355,7 +376,7 @@ struct Assigned<'a> {
     subtasks: Vec<Outlined<'a>>,
 }
 
-fn work_prompt(tasks: &Tasks, ids: &[i64], choros: bool) -> String {
+fn work_prompt(tasks: &Tasks, ids: &[i64], choros_here: Option<&str>) -> String {
     // Every task's ancestors, merged into one outline in tree order, so
     // tasks that share a parent share its context.
     let wanted: std::collections::HashSet<i64> =
@@ -386,7 +407,7 @@ fn work_prompt(tasks: &Tasks, ids: &[i64], choros: bool) -> String {
     let mut ctx = tera::Context::new();
     ctx.insert("ancestors", &ancestors);
     ctx.insert("tasks", &assigned);
-    ctx.insert("choros", &choros);
+    ctx.insert("choros_here", &choros_here);
     let mut tera = tera::Tera::default();
     tera.register_filter("indent", indent);
     tera.add_raw_template("work.md", WORK_TEMPLATE)
@@ -461,18 +482,18 @@ mod tests {
         let n = add(&mut conn, Some(&c), "Nested\nOne level down.");
 
         let tasks = Tasks::load(&conn, &p).unwrap();
-        let prompt = work_prompt(&tasks, &[tasks.live(&b).unwrap().id], false);
+        let prompt = work_prompt(&tasks, &[tasks.live(&b).unwrap().id], None);
         assert_eq!(
             prompt,
             format!(
-                "Greater context that your work sits within:
+                "## Context
 
 - Build a demo
   Project context.
   - Backend
     Rust services.
 
-Task to complete here (demo/{b}):
+## Task (demo/{b})
 
 Write the API
 
@@ -486,58 +507,77 @@ Use REST.
     One level down.
 - [done] Auth
 
+## Ergon
+
 These are ergon tasks; change them with the `ergon` CLI (`ergon help` lists
 its commands, `ergon tree` shows each task's reference). As the work goes:
 
-- Once all of a task's work is in PRs, set it to landing:
+- Once all of a task's work is landed or in PRs, set it to landing:
   `ergon edit REF --status landing`.
-- Until then, leave it in_progress, and set each subtask whose work is all in
-  PRs to landing.
+- Until then, leave it in_progress, and set each subtask whose work is all
+  landed or in PRs to landing.
 - Name the task references (like demo/{b}) in each PR's title or body.
 - `ergon work` resumes this session only from the folder it began in, so
   don't move or archive that folder.
+
+## Start
 
 Ask the user how they'd like to start.
 "
             )
         );
 
-        // With choros installed, the session is pointed at it.
-        let leaf = work_prompt(&tasks, &[tasks.live(&n).unwrap().id], true);
+        // In a choros space, the session is told where it is and how to
+        // label its lands.
+        let here = "here: workspace demo-ws\ntrunk: /src";
+        let leaf = work_prompt(&tasks, &[tasks.live(&n).unwrap().id], Some(here));
         assert!(leaf.ends_with(&format!(
-            "  - Backend
-    Rust services.
-    - Write the API
-      Use REST.
-      - Routes
-        Under /api.
+            "        Versioned.
 
-        Versioned.
-
-Task to complete here (demo/{n}):
+## Task (demo/{n})
 
 Nested
 
 One level down.
 
+## Ergon
+
 These are ergon tasks; change them with the `ergon` CLI (`ergon help` lists
 its commands, `ergon tree` shows each task's reference). As the work goes:
 
-- Once all of a task's work is in PRs, set it to landing:
+- Once all of a task's work is landed or in PRs, set it to landing:
   `ergon edit REF --status landing`.
-- Until then, leave it in_progress, and set each subtask whose work is all in
-  PRs to landing.
+- Until then, leave it in_progress, and set each subtask whose work is all
+  landed or in PRs to landing.
 - Name the task references (like demo/{n}) in each PR's title or body.
 - `ergon work` resumes this session only from the folder it began in, so
   don't move or archive that folder.
 
-choros is installed. If this folder is in a choros space, `choros here` says
-what it is and where a land from it goes, and `choros help agent` says how to
-work in it. If this session began in a choros workspace, don't run
+## Choros
+
+This session's folder is in a choros space. `choros here` says:
+
+```
+here: workspace demo-ws
+trunk: /src
+```
+
+`choros help agent` says how to work in it. Pass each task a land carries to
+`choros land` as `--label`, by its reference (like
+`--label demo/{n}`): `ergon show` finds a land's tasks by these
+labels. If this session began in a choros workspace, don't run
 `choros land archive` or `choros archive` on it.
+
+## Start
 
 Ask the user how they'd like to start.
 "
         )));
+
+        // Tasks taken on together are numbered.
+        let ids = [tasks.live(&d).unwrap().id, tasks.live(&n).unwrap().id];
+        let both = work_prompt(&tasks, &ids, None);
+        assert!(both.contains(&format!("## Task 1 of 2 (demo/{d})\n\nAuth\n")));
+        assert!(both.contains(&format!("## Task 2 of 2 (demo/{n})\n\nNested\n")));
     }
 }

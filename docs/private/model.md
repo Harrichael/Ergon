@@ -354,22 +354,30 @@ There are two prompts:
   [work.md.tera](../prompts/work.md.tera):
 
   ```
-  Greater context that your work sits within:
+  ## Context
   <the ancestors, root first: titles, with bodies indented below>
 
-  Task to complete here (<project>/<slug>):
+  ## Task (<project>/<slug>)
   <the task's intent>
   <non-deleted, non-cancelled descendants' intents, indented by depth>
 
+  ## Ergon
+  <how to move the tasks to landing, and to name them in PRs>
+
+  ## Choros
+  <what `choros here` says of the session's folder, and to pass each
+  task to `choros land` as --label>
+
+  ## Start
   Ask the user how they'd like to start.
   ```
 
   For several tasks, the ancestors of all of them are merged into one
-  outline in tree order, and each task follows in tree order as `Task N of M
-  to complete here (...)`, with its own subtasks.
+  outline in tree order, and each task follows in tree order as
+  `## Task N of M (...)`, with its own subtasks.
 
-  Work sessions aren't told about ergon. The user (or the planner) updates
-  their status.
+  The Choros section appears only when `choros here` succeeds in the
+  session's folder: the one its tasks recorded, else the current one.
 
 ## CLI
 

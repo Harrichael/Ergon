@@ -657,7 +657,7 @@ fn run(cli: Cli) -> Result<()> {
             let p = project_for(&conn, &tasks.iter().collect::<Vec<_>>())?;
             let all = Tasks::load(&conn, &p)?;
             let ids = claude::selection(&all, &tasks.slugs())?;
-            print!("{}", claude::prompt(&all, &ids));
+            print!("{}", claude::prompt(&all, &ids, &cwd));
         }
         Command::Help { .. } => unreachable!("handled above"),
         Command::Dep(DepCommand::Add { task, depends_on }) => {

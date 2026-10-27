@@ -59,13 +59,13 @@ $ ergon work demo/FTFE
 [claude in $ROOT/elsewhere]
 --session-id
 9487b132-9170-4b0c-ad01-fba48316f5e9
-Greater context that your work sits within:
+## Context
 
 - Build a demo
   Project context.
   - Backend
 
-Task to complete here (demo/FTFE):
+## Task (demo/FTFE)
 
 Write the API
 
@@ -75,16 +75,20 @@ Use REST.
   - Nested
 - [done] Auth
 
+## Ergon
+
 These are ergon tasks; change them with the `ergon` CLI (`ergon help` lists
 its commands, `ergon tree` shows each task's reference). As the work goes:
 
-- Once all of a task's work is in PRs, set it to landing:
+- Once all of a task's work is landed or in PRs, set it to landing:
   `ergon edit REF --status landing`.
-- Until then, leave it in_progress, and set each subtask whose work is all in
-  PRs to landing.
+- Until then, leave it in_progress, and set each subtask whose work is all
+  landed or in PRs to landing.
 - Name the task references (like demo/FTFE) in each PR's title or body.
 - `ergon work` resumes this session only from the folder it began in, so
   don't move or archive that folder.
+
+## Start
 
 Ask the user how they'd like to start.
 $ ergon show demo/FTFE
@@ -136,25 +140,29 @@ $ ergon work qwpT
 [claude in $ROOT/proj]
 --session-id
 1c00f751-1ae5-476d-b826-a7e779d4c793
-Greater context that your work sits within:
+## Context
 
 - Build a demo
   Project context.
 
-Task to complete here (demo/qwpT):
+## Task (demo/qwpT)
 
 Blocked
+
+## Ergon
 
 These are ergon tasks; change them with the `ergon` CLI (`ergon help` lists
 its commands, `ergon tree` shows each task's reference). As the work goes:
 
-- Once all of a task's work is in PRs, set it to landing:
+- Once all of a task's work is landed or in PRs, set it to landing:
   `ergon edit REF --status landing`.
-- Until then, leave it in_progress, and set each subtask whose work is all in
-  PRs to landing.
+- Until then, leave it in_progress, and set each subtask whose work is all
+  landed or in PRs to landing.
 - Name the task references (like demo/qwpT) in each PR's title or body.
 - `ergon work` resumes this session only from the folder it began in, so
   don't move or archive that folder.
+
+## Start
 
 Ask the user how they'd like to start.
 
@@ -205,25 +213,29 @@ Ask the user how they'd like to start planning.
 $ ergon add Docs
 qxpj
 $ ergon prompt qxpj
-Greater context that your work sits within:
+## Context
 
 - Second project
   Now with context.
 
-Task to complete here (second/qxpj):
+## Task (second/qxpj)
 
 Docs
+
+## Ergon
 
 These are ergon tasks; change them with the `ergon` CLI (`ergon help` lists
 its commands, `ergon tree` shows each task's reference). As the work goes:
 
-- Once all of a task's work is in PRs, set it to landing:
+- Once all of a task's work is landed or in PRs, set it to landing:
   `ergon edit REF --status landing`.
-- Until then, leave it in_progress, and set each subtask whose work is all in
-  PRs to landing.
+- Until then, leave it in_progress, and set each subtask whose work is all
+  landed or in PRs to landing.
 - Name the task references (like second/qxpj) in each PR's title or body.
 - `ergon work` resumes this session only from the folder it began in, so
   don't move or archive that folder.
+
+## Start
 
 Ask the user how they'd like to start.
 $ ergon show qxpj

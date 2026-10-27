@@ -14,15 +14,19 @@
                   pad      two spaces per level below the task
                   marker   "done", "landing", or null
 
-  choros      whether choros is installed
+  choros_here what `choros here` printed in the session's folder, or
+              null when choros isn't installed or that folder isn't in a
+              choros space
 
   `text | indent(with=PREFIX)` puts PREFIX before every non-blank line.
 
   Tags are indented by nesting and open with `{%-`, which drops the
   indentation and the line break before the tag, so a tag's line prints
   nothing. A blank line goes after a tag: one before it is dropped too.
-#}Greater context that your work sits within:
-{# a blank line before the outline #}
+#}## Context
+
+These are the ancestor tasks which may help frame your work:
+
 {%- for a in ancestors %}
 {{ a.pad }}- {{ a.title }}
   {%- if a.body %}
@@ -31,7 +35,7 @@
 {%- endfor %}
 {%- for task in tasks %}
 
-{% if tasks | length > 1 %}Task {{ loop.index }} of {{ tasks | length }}{% else %}Task{% endif %} to complete here ({{ task.reference }}):
+## Your Task{% if tasks | length > 1 %} {{ loop.index }} of {{ tasks | length }}{% endif %} ({{ task.reference }})
 
 {{ task.title }}
   {%- if task.body %}
@@ -49,22 +53,35 @@
   {%- endif %}
 {%- endfor %}
 
+## Ergon
+
 These are ergon tasks; change them with the `ergon` CLI (`ergon help` lists
 its commands, `ergon tree` shows each task's reference). As the work goes:
 
-- Once all of a task's work is in PRs, set it to landing:
+- Once all of a task's work is landed or in PRs, set it to landing:
   `ergon edit REF --status landing`.
-- Until then, leave it in_progress, and set each subtask whose work is all in
-  PRs to landing.
+- Until then, leave it in_progress, and set each subtask whose work is all
+  landed or in PRs to landing.
 - Name the task references (like {{ tasks.0.reference }}) in each PR's title or body.
 - `ergon work` resumes this session only from the folder it began in, so
   don't move or archive that folder.
-{%- if choros %}
+{%- if choros_here %}
 
-choros is installed. If this folder is in a choros space, `choros here` says
-what it is and where a land from it goes, and `choros help agent` says how to
-work in it. If this session began in a choros workspace, don't run
+## Choros
+
+This session's folder is in a choros space. `choros here` says:
+
+```
+{{ choros_here }}
+```
+
+`choros help agent` says how to work in it. Pass each task a land carries to
+`choros land` as `--label`, by its reference (like
+`--label {{ tasks.0.reference }}`): `ergon show` finds a land's tasks by these
+labels. If this session began in a choros workspace, don't run
 `choros land archive` or `choros archive` on it.
 {%- endif %}
+
+## Start
 
 Ask the user how they'd like to start.

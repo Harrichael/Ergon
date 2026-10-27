@@ -14,26 +14,30 @@ $ ergon work FTFE
 [claude in $ROOT/a]
 --session-id
 9487b132-9170-4b0c-ad01-fba48316f5e9
-Greater context that your work sits within:
+## Context
 
 - Alpha
   Context.
   - Backend
 
-Task to complete here (alpha/FTFE):
+## Task (alpha/FTFE)
 
 API
+
+## Ergon
 
 These are ergon tasks; change them with the `ergon` CLI (`ergon help` lists
 its commands, `ergon tree` shows each task's reference). As the work goes:
 
-- Once all of a task's work is in PRs, set it to landing:
+- Once all of a task's work is landed or in PRs, set it to landing:
   `ergon edit REF --status landing`.
-- Until then, leave it in_progress, and set each subtask whose work is all in
-  PRs to landing.
+- Until then, leave it in_progress, and set each subtask whose work is all
+  landed or in PRs to landing.
 - Name the task references (like alpha/FTFE) in each PR's title or body.
 - `ergon work` resumes this session only from the folder it began in, so
   don't move or archive that folder.
+
+## Start
 
 Ask the user how they'd like to start.
 $ ergon add "Old idea" --parent nHcx
