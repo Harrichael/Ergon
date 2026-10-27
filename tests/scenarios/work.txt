@@ -75,6 +75,17 @@ Use REST.
   - Nested
 - [done] Auth
 
+These are ergon tasks; change them with the `ergon` CLI (`ergon help` lists
+its commands, `ergon tree` shows each task's reference). As the work goes:
+
+- Once all of a task's work is in PRs, set it to landing:
+  `ergon edit REF --status landing`.
+- Until then, leave it in_progress, and set each subtask whose work is all in
+  PRs to landing.
+- Name the task references (like demo/FTFE) in each PR's title or body.
+- `ergon work` resumes this session only from the folder it began in, so
+  don't move or archive that folder.
+
 Ask the user how they'd like to start.
 $ ergon show demo/FTFE
 demo/FTFE  Write the API
@@ -134,6 +145,17 @@ Task to complete here (demo/qwpT):
 
 Blocked
 
+These are ergon tasks; change them with the `ergon` CLI (`ergon help` lists
+its commands, `ergon tree` shows each task's reference). As the work goes:
+
+- Once all of a task's work is in PRs, set it to landing:
+  `ergon edit REF --status landing`.
+- Until then, leave it in_progress, and set each subtask whose work is all in
+  PRs to landing.
+- Name the task references (like demo/qwpT) in each PR's title or body.
+- `ergon work` resumes this session only from the folder it began in, so
+  don't move or archive that folder.
+
 Ask the user how they'd like to start.
 
 warning: demo/qwpT is blocked, waiting on demo/qxpj
@@ -191,6 +213,17 @@ Greater context that your work sits within:
 Task to complete here (second/qxpj):
 
 Docs
+
+These are ergon tasks; change them with the `ergon` CLI (`ergon help` lists
+its commands, `ergon tree` shows each task's reference). As the work goes:
+
+- Once all of a task's work is in PRs, set it to landing:
+  `ergon edit REF --status landing`.
+- Until then, leave it in_progress, and set each subtask whose work is all in
+  PRs to landing.
+- Name the task references (like second/qxpj) in each PR's title or body.
+- `ergon work` resumes this session only from the folder it began in, so
+  don't move or archive that folder.
 
 Ask the user how they'd like to start.
 $ ergon show qxpj

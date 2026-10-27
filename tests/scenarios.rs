@@ -25,9 +25,9 @@
 //!
 //! Every scenario gets a fresh database, `ERGON_SEED=1` (so slugs and UUIDs
 //! are deterministic), a frozen clock (`ERGON_NOW`, shown in UTC), no colour,
-//! and a fake `claude` that prints its directory and arguments and saves the
-//! conversation, with the directory it began in, under its own
-//! `CLAUDE_CONFIG_DIR` (not if `CRASH` is set).
+//! `PATH=/usr/bin:/bin`, and a fake `claude` that prints its directory and
+//! arguments and saves the conversation, with the directory it began in,
+//! under its own `CLAUDE_CONFIG_DIR` (not if `CRASH` is set).
 //!
 //! Run with `ERGON_BLESS=1` to rewrite failing expectations with the actual
 //! output, and `ERGON_SCENARIO=<name>` to run only matching files.
@@ -248,6 +248,9 @@ impl Sandbox {
             .env("ERGON_NOW", NOW)
             .env("TZ", "UTC")
             .env("NO_COLOR", "1")
+            // The work prompt says more when choros is on PATH; keep the
+            // machine's install out of it.
+            .env("PATH", "/usr/bin:/bin")
             // The tests may themselves run inside Claude Code.
             .env_remove("CLAUDE_CODE_SESSION_ID")
             .envs(env.iter().map(|(k, v)| (k, v)))

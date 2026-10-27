@@ -59,11 +59,14 @@ fn find_claude() -> Result<PathBuf> {
     if path.components().count() > 1 {
         return Ok(path);
     }
+    on_path(&path).with_context(|| format!("{} not found on PATH", path.display()))
+}
+
+fn on_path(program: &Path) -> Option<PathBuf> {
     let dirs = std::env::var_os("PATH").unwrap_or_default();
     std::env::split_paths(&dirs)
-        .map(|d| d.join(&path))
+        .map(|d| d.join(program))
         .find(|p| p.is_file())
-        .with_context(|| format!("{} not found on PATH", path.display()))
 }
 
 /// The tasks one session works on, in tree order: one task, or several
@@ -295,7 +298,7 @@ fn projects_dir() -> Option<PathBuf> {
 pub fn prompt(tasks: &Tasks, ids: &[i64]) -> String {
     match ids {
         [id] if tasks.get(*id).is_root() => planner_prompt(tasks),
-        _ => work_prompt(tasks, ids),
+        _ => work_prompt(tasks, ids, on_path(Path::new("choros")).is_some()),
     }
 }
 
@@ -353,7 +356,7 @@ struct Assigned<'a> {
     subtasks: Vec<Outlined<'a>>,
 }
 
-fn work_prompt(tasks: &Tasks, ids: &[i64]) -> String {
+fn work_prompt(tasks: &Tasks, ids: &[i64], choros: bool) -> String {
     // Every task's ancestors, merged into one outline in tree order, so
     // tasks that share a parent share its context.
     let wanted: std::collections::HashSet<i64> =
@@ -384,6 +387,7 @@ fn work_prompt(tasks: &Tasks, ids: &[i64]) -> String {
     let mut ctx = tera::Context::new();
     ctx.insert("ancestors", &ancestors);
     ctx.insert("tasks", &assigned);
+    ctx.insert("choros", &choros);
     let mut tera = tera::Tera::default();
     tera.register_filter("indent", indent);
     tera.add_raw_template("work.md", WORK_TEMPLATE)
@@ -458,7 +462,7 @@ mod tests {
         let n = add(&mut conn, Some(&c), "Nested\nOne level down.");
 
         let tasks = Tasks::load(&conn, &p).unwrap();
-        let prompt = work_prompt(&tasks, &[tasks.live(&b).unwrap().id]);
+        let prompt = work_prompt(&tasks, &[tasks.live(&b).unwrap().id], false);
         assert_eq!(
             prompt,
             format!(
@@ -483,12 +487,24 @@ Use REST.
     One level down.
 - [done] Auth
 
+These are ergon tasks; change them with the `ergon` CLI (`ergon help` lists
+its commands, `ergon tree` shows each task's reference). As the work goes:
+
+- Once all of a task's work is in PRs, set it to landing:
+  `ergon edit REF --status landing`.
+- Until then, leave it in_progress, and set each subtask whose work is all in
+  PRs to landing.
+- Name the task references (like demo/{b}) in each PR's title or body.
+- `ergon work` resumes this session only from the folder it began in, so
+  don't move or archive that folder.
+
 Ask the user how they'd like to start.
 "
             )
         );
 
-        let leaf = work_prompt(&tasks, &[tasks.live(&n).unwrap().id]);
+        // With choros installed, the session is pointed at it.
+        let leaf = work_prompt(&tasks, &[tasks.live(&n).unwrap().id], true);
         assert!(leaf.ends_with(&format!(
             "  - Backend
     Rust services.
@@ -504,6 +520,22 @@ Task to complete here (demo/{n}):
 Nested
 
 One level down.
+
+These are ergon tasks; change them with the `ergon` CLI (`ergon help` lists
+its commands, `ergon tree` shows each task's reference). As the work goes:
+
+- Once all of a task's work is in PRs, set it to landing:
+  `ergon edit REF --status landing`.
+- Until then, leave it in_progress, and set each subtask whose work is all in
+  PRs to landing.
+- Name the task references (like demo/{n}) in each PR's title or body.
+- `ergon work` resumes this session only from the folder it began in, so
+  don't move or archive that folder.
+
+choros is installed. If this folder is in a choros space, `choros here` says
+what it is and where a land from it goes, and `choros help agent` says how to
+work in it. If this session began in a choros workspace, don't run
+`choros land archive` or `choros archive` on it.
 
 Ask the user how they'd like to start.
 "

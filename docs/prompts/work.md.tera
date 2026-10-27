@@ -14,6 +14,8 @@
                   pad      two spaces per level below the task
                   marker   "done", "landing", or null
 
+  choros      whether choros is installed
+
   `text | indent(with=PREFIX)` puts PREFIX before every non-blank line.
 
   Tags are indented by nesting and open with `{%-`, which drops the
@@ -46,5 +48,23 @@
     {%- endfor %}
   {%- endif %}
 {%- endfor %}
+
+These are ergon tasks; change them with the `ergon` CLI (`ergon help` lists
+its commands, `ergon tree` shows each task's reference). As the work goes:
+
+- Once all of a task's work is in PRs, set it to landing:
+  `ergon edit REF --status landing`.
+- Until then, leave it in_progress, and set each subtask whose work is all in
+  PRs to landing.
+- Name the task references (like {{ tasks.0.reference }}) in each PR's title or body.
+- `ergon work` resumes this session only from the folder it began in, so
+  don't move or archive that folder.
+{%- if choros %}
+
+choros is installed. If this folder is in a choros space, `choros here` says
+what it is and where a land from it goes, and `choros help agent` says how to
+work in it. If this session began in a choros workspace, don't run
+`choros land archive` or `choros archive` on it.
+{%- endif %}
 
 Ask the user how they'd like to start.
