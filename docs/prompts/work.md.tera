@@ -23,6 +23,9 @@
 {# a blank line before the outline #}
 {%- for a in ancestors %}
 {{ a.pad }}- {{ a.title }}
+  {%- if a.body %}
+{{ a.body | indent(with=a.pad ~ "  ") }}
+  {%- endif %}
 {%- endfor %}
 {%- for task in tasks %}
 

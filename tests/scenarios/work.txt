@@ -62,6 +62,7 @@ $ ergon work demo/FTFE
 Greater context that your work sits within:
 
 - Build a demo
+  Project context.
   - Backend
 
 Task to complete here (demo/FTFE):
@@ -127,6 +128,7 @@ $ ergon work qwpT
 Greater context that your work sits within:
 
 - Build a demo
+  Project context.
 
 Task to complete here (demo/qwpT):
 
@@ -184,6 +186,7 @@ $ ergon prompt qxpj
 Greater context that your work sits within:
 
 - Second project
+  Now with context.
 
 Task to complete here (second/qxpj):
 

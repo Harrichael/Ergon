@@ -352,7 +352,7 @@ mod tests {
         let add = |conn: &mut Connection, parent: Option<&str>, intent: &str| {
             ops::add(conn, &p, parent, intent, Default::default()).unwrap()
         };
-        let a = add(&mut conn, None, "Backend");
+        let a = add(&mut conn, None, "Backend\nRust services.");
         let b = add(&mut conn, Some(&a), "Write the API\nUse REST.");
         let c = add(&mut conn, Some(&b), "Routes\n\nUnder /api.\n\nVersioned.");
         let d = add(&mut conn, Some(&b), "Auth");
@@ -374,7 +374,9 @@ mod tests {
                 "Greater context that your work sits within:
 
 - Build a demo
+  Project context.
   - Backend
+    Rust services.
 
 Task to complete here (demo/{b}):
 
@@ -398,8 +400,13 @@ Ask the user how they'd like to start.
         let leaf = work_prompt(&tasks, &[tasks.live(&n).unwrap().id]);
         assert!(leaf.ends_with(&format!(
             "  - Backend
+    Rust services.
     - Write the API
+      Use REST.
       - Routes
+        Under /api.
+
+        Versioned.
 
 Task to complete here (demo/{n}):
 

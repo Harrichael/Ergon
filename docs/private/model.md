@@ -339,7 +339,7 @@ There are two prompts:
 
   ```
   Greater context that your work sits within:
-  <titles of the ancestors, root first>
+  <the ancestors, root first: titles, with bodies indented below>
 
   Task to complete here (<project>/<slug>):
   <the task's intent>
