@@ -26,10 +26,14 @@ pub struct Launch {
 
 impl Launch {
     /// Replaces this process with `claude` (on Unix), so the session owns the
-    /// terminal. Only returns on failure.
-    pub fn exec(self) -> Result<()> {
+    /// terminal; `stdin` stands in for ours when that was a pipe. Only
+    /// returns on failure.
+    pub fn exec(self, stdin: Option<std::fs::File>) -> Result<()> {
         let mut cmd = std::process::Command::new(&self.program);
         cmd.args(&self.args).current_dir(&self.cwd);
+        if let Some(f) = stdin {
+            cmd.stdin(f);
+        }
         #[cfg(unix)]
         {
             use std::os::unix::process::CommandExt;

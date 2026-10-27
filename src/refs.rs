@@ -58,6 +58,18 @@ impl TaskRefs {
     pub fn slugs(&self) -> Vec<String> {
         self.0.iter().map(|r| r.slug.clone()).collect()
     }
+
+    /// The references in piped text: the first word of each line, so rows of
+    /// `ergon ls` read as their tasks, and comma-separated lists work too.
+    pub fn from_listing(text: &str) -> Result<TaskRefs> {
+        text.lines()
+            .filter_map(|l| l.split_whitespace().next())
+            .flat_map(|w| w.split(','))
+            .filter(|r| !r.is_empty())
+            .map(str::parse)
+            .collect::<Result<_>>()
+            .map(TaskRefs)
+    }
 }
 
 /// The single project that `--project` and the references name, falling back
@@ -101,6 +113,21 @@ mod tests {
         for bad in ["E6d", "E0dn", "a b/E6dn", "/E6dn", "ergon/"] {
             assert!(bad.parse::<TaskRef>().is_err(), "{bad}");
         }
+    }
+
+    #[test]
+    fn piped_listings_read_as_their_tasks() {
+        let ls = "E6dn  p2  todo         First  (in: Parent)\n\nab/qxpj  p-  todo  Second\n";
+        assert_eq!(
+            TaskRefs::from_listing(ls).unwrap().0,
+            [
+                "E6dn".parse().unwrap(),
+                "ab/qxpj".parse::<TaskRef>().unwrap()
+            ]
+        );
+        assert_eq!(TaskRefs::from_listing("E6dn,qxpj\n").unwrap().0.len(), 2);
+        assert!(TaskRefs::from_listing("").unwrap().0.is_empty());
+        assert!(TaskRefs::from_listing("not-a-slug  p2").is_err());
     }
 
     #[test]

@@ -309,7 +309,11 @@ taken on together.
 
 `ergon work <ref>[,<ref>...]`, or `ergon work -i` to pick the tasks from the
 `ls` list (Space checks, Enter starts the checked tasks or else the
-highlighted one; a refusal stays in the picker):
+highlighted one; a refusal stays in the picker), or `ergon work -` to read
+them from stdin, so `ergon ls --attention ..3 | ergon work -` composes. From
+stdin it takes the first word of each line, split on commas, so `ls` rows
+read as their tasks; the session's stdin is then `/dev/tty`, refused if
+there is none, and an empty stdin starts nothing:
 
 - **Refused** if any task's effective status is closed, if the root is
   given with other tasks (planning isn't work), or if a task is given with
@@ -412,8 +416,10 @@ ergon import [<file>]
 
 ergon work <ref>[,<ref>...]
 ergon work -i
+ergon work -
     Start or resume the session for one task or several taken on together;
-    with -i, pick them from the `ls` list.
+    with -i, pick them from the `ls` list; with -, read them from stdin, as
+    piped from `ergon ls`.
 ergon prompt <ref>[,<ref>...]
     Print the prompt `ergon work` starts the session with, rendered
     from the tasks as they are now. A session whose context was compacted

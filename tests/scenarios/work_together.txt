@@ -107,3 +107,10 @@ Usage: ergon work <TASKS|--interactive>
 
 For more information, try '--help'.
 [exit 2]
+
+# `ergon work -` reads the tasks from stdin, as piped from `ergon ls`. With
+# nothing there, nothing starts.
+$ ergon work - <<EOF
+EOF
+error: no tasks on stdin
+[exit 1]

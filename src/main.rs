@@ -197,7 +197,9 @@ enum Command {
     /// of them resumes it.
     #[command(group(clap::ArgGroup::new("which").required(true).args(["tasks", "interactive"])))]
     Work {
-        tasks: Option<TaskRefs>,
+        /// Comma-separated, or `-` to read them from stdin, as in
+        /// `ergon ls --attention ..3 | ergon work -`.
+        tasks: Option<WorkTasks>,
         /// Pick the tasks from `ergon ls` instead.
         #[arg(short, long)]
         interactive: bool,
@@ -234,6 +236,25 @@ enum ProjectCommand {
     Retire { name: String },
     /// Undo `retire`.
     Unretire { name: String },
+}
+
+/// The tasks `ergon work` was given, or `-` for the ones piped in.
+#[derive(Clone)]
+enum WorkTasks {
+    Given(TaskRefs),
+    Stdin,
+}
+
+impl std::str::FromStr for WorkTasks {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> Result<Self> {
+        if s == "-" {
+            Ok(WorkTasks::Stdin)
+        } else {
+            s.parse().map(WorkTasks::Given)
+        }
+    }
 }
 
 /// A value, or `none` to unset it.
@@ -334,7 +355,7 @@ fn run(cli: Cli) -> Result<()> {
             println!("Created project {} in {}", p.name, cwd.display());
             if !no_launch {
                 let root = [project::ROOT_SLUG.to_string()];
-                launch(claude::work(&mut conn, &p, &root, &cwd)?)?;
+                launch(claude::work(&mut conn, &p, &root, &cwd)?, None)?;
             }
         }
         Command::Project(cmd) => run_project(&conn, cmd)?,
@@ -514,6 +535,21 @@ fn run(cli: Cli) -> Result<()> {
             }
         }
         Command::Work { tasks, .. } => {
+            let (tasks, tty) = match tasks {
+                Some(WorkTasks::Given(t)) => (Some(t), None),
+                Some(WorkTasks::Stdin) => {
+                    let text = std::io::read_to_string(std::io::stdin())?;
+                    let t = TaskRefs::from_listing(&text)?;
+                    if t.0.is_empty() {
+                        bail!("no tasks on stdin");
+                    }
+                    // The pipe took claude's stdin; it gets the terminal back.
+                    let tty = std::fs::File::open("/dev/tty")
+                        .context("`ergon work -` needs a terminal for the session")?;
+                    (Some(t), Some(tty))
+                }
+                None => (None, None),
+            };
             let refs: Vec<&TaskRef> = tasks.iter().flat_map(|t| t.iter()).collect();
             let p = project_for(&conn, &refs)?;
             let l = match &tasks {
@@ -523,7 +559,7 @@ fn run(cli: Cli) -> Result<()> {
                     None => return Ok(()),
                 },
             };
-            launch(l)?;
+            launch(l, tty)?;
         }
         Command::Prompt { tasks } => {
             let p = project_for(&conn, &tasks.iter().collect::<Vec<_>>())?;
@@ -544,11 +580,11 @@ fn run(cli: Cli) -> Result<()> {
     Ok(())
 }
 
-fn launch(l: claude::Launch) -> Result<()> {
+fn launch(l: claude::Launch, stdin: Option<std::fs::File>) -> Result<()> {
     if let Some(w) = &l.warning {
         anstream::eprintln!("warning: {w}");
     }
-    l.exec()
+    l.exec(stdin)
 }
 
 fn help(topic: Option<&str>) -> Result<()> {
