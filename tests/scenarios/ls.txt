@@ -77,10 +77,11 @@ root  in_progress  p-  Root
     nHcx  todo         p2  Second  blocked
   pQyk  todo         p2  Prerequisite
 
-# Landing and done work isn't listed.
+# Landing and done work isn't listed. Landing work doesn't block either:
+# what waits on it can build on its PRs.
 $ ergon edit pQyk --status landing
 $ ergon ls
-FTFE  p2  todo         First  (in: Parent)
+qxpj  p2  todo         Parent
 $ ergon edit pQyk --status done
 $ ergon ls
 qxpj  p2  todo         Parent

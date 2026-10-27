@@ -192,7 +192,7 @@ fn compute_size(tasks: &Tasks, id: i64, out: &mut HashMap<i64, Size>) -> Option<
 }
 
 fn mark_blocked(tasks: &Tasks, id: i64, inherited: bool, out: &mut HashSet<i64>) {
-    let blocked = inherited || !unfinished_dependencies(tasks, id).is_empty();
+    let blocked = inherited || !open_dependencies(tasks, id).is_empty();
     if blocked {
         out.insert(id);
     }
@@ -202,20 +202,22 @@ fn mark_blocked(tasks: &Tasks, id: i64, inherited: bool, out: &mut HashSet<i64>)
 }
 
 /// The task's own dependencies that aren't done or cancelled.
-fn unfinished_dependencies(tasks: &Tasks, id: i64) -> Vec<i64> {
+/// Landing work doesn't block: its PRs are up, and work that needs it can
+/// build on them before they merge.
+fn open_dependencies(tasks: &Tasks, id: i64) -> Vec<i64> {
     tasks
         .dependencies(id)
         .into_iter()
         .map(|d| d.id)
-        .filter(|&d| !tasks.effective_status(d).is_closed())
+        .filter(|&d| tasks.effective_status(d).is_open())
         .collect()
 }
 
-/// Unfinished dependencies of the task and its ancestors: what it waits on.
+/// Open dependencies of the task and its ancestors: what it waits on.
 pub fn blocked_by(tasks: &Tasks, id: i64) -> Vec<i64> {
     std::iter::once(id)
         .chain(tasks.ancestors(id))
-        .flat_map(|t| unfinished_dependencies(tasks, t))
+        .flat_map(|t| open_dependencies(tasks, t))
         .collect()
 }
 

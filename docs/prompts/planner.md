@@ -79,8 +79,9 @@ a task's attention is raised to the highest among its subtasks that aren't
 done or cancelled. An unrated task with an unrated subtask under it shows as
 unknown (`a?`). The user dispatches work by it; work sessions never see it.
 
-**Dependencies.** "A depends on B" means A shouldn't start until B is done or
-cancelled. Until then, A and all of A's subtasks are **blocked**. Dependencies
+**Dependencies.** "A depends on B" means A shouldn't start until B's work is
+in PRs: B is landing, done or cancelled. Until then, A and all of A's
+subtasks are **blocked**. Dependencies
 never prevent a status change; they only affect what `ergon ls` offers. Use
 them for real ordering constraints between different branches of the tree.
 A task can't depend on its own ancestor or descendant (the tree already
