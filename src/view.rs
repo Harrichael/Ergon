@@ -5,7 +5,7 @@ use std::fmt::Write;
 
 use anstyle::{AnsiColor, Style};
 
-use crate::derived::{self, Derived};
+use crate::derived::{self, Derived, Sort};
 use crate::fmt::timestamp;
 use crate::task::Tasks;
 
@@ -224,16 +224,16 @@ fn write_tree(
 }
 
 /// `ergon ls`: one row per task ready to start.
-pub fn ls(tasks: &Tasks, derived: &Derived) -> String {
-    ls_rows(tasks, derived)
+pub fn ls(tasks: &Tasks, derived: &Derived, sort: Sort) -> String {
+    ls_rows(tasks, derived, sort)
         .into_iter()
         .map(|(_, row)| row + "\n")
         .collect()
 }
 
 /// The rows of `ergon ls`, each with its task, without line breaks.
-pub fn ls_rows(tasks: &Tasks, derived: &Derived) -> Vec<(i64, String)> {
-    let ids = derived::ls(tasks, derived);
+pub fn ls_rows(tasks: &Tasks, derived: &Derived, sort: Sort) -> Vec<(i64, String)> {
+    let ids = derived::ls(tasks, derived, sort);
     let width = derived
         .sized()
         .then(|| size_width(derived, ids.iter().copied()));

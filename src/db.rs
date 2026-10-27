@@ -3,6 +3,7 @@ use std::time::Duration;
 
 use anyhow::{Context, Result, bail};
 use rusqlite::Connection;
+use rusqlite::functions::FunctionFlags;
 
 /// One schema change.
 enum Step {
@@ -16,7 +17,13 @@ enum Step {
 /// Schema migrations, applied in order. Step `i` brings the database to
 /// `PRAGMA user_version = i + 1`. Released steps are frozen (a test checks
 /// their hashes): never edit one, append another.
-const MIGRATIONS: &[Step] = &[Step::Sql(V1), Step::Sql(V2), Step::Sql(V3), Step::Sql(V4)];
+const MIGRATIONS: &[Step] = &[
+    Step::Sql(V1),
+    Step::Sql(V2),
+    Step::Sql(V3),
+    Step::Sql(V4),
+    Step::Sql(V5),
+];
 
 const BUSY_TIMEOUT: Duration = Duration::from_secs(5);
 
@@ -82,6 +89,49 @@ const V4: &str = r#"
 ALTER TABLE tasks ADD COLUMN attention INTEGER CHECK (attention BETWEEN 1 AND 10);
 "#;
 
+const V5: &str = r#"
+-- Each task's planning state since it was created, for charts over time like
+-- a burndown: a row when a task is added, and one whenever its parent,
+-- status, priority, size, attention or deletion changes. Triggers write it,
+-- so no change to a task can miss it. `at` comes from ergon_now(), which
+-- ergon defines on each connection.
+CREATE TABLE task_history (
+  id         INTEGER PRIMARY KEY,
+  task_id    INTEGER NOT NULL REFERENCES tasks(id),
+  at         INTEGER NOT NULL,
+  parent_id  INTEGER,
+  status     TEXT,
+  priority   INTEGER,
+  size       INTEGER,
+  attention  INTEGER,
+  deleted_at INTEGER
+);
+CREATE INDEX task_history_task ON task_history(task_id, at);
+
+CREATE TRIGGER task_history_add AFTER INSERT ON tasks BEGIN
+  INSERT INTO task_history (task_id, at, parent_id, status, priority, size, attention, deleted_at)
+  VALUES (NEW.id, ergon_now(), NEW.parent_id, NEW.status, NEW.priority, NEW.size, NEW.attention,
+          NEW.deleted_at);
+END;
+
+CREATE TRIGGER task_history_change
+AFTER UPDATE OF parent_id, status, priority, size, attention, deleted_at ON tasks
+WHEN OLD.parent_id IS NOT NEW.parent_id OR OLD.status IS NOT NEW.status
+  OR OLD.priority IS NOT NEW.priority OR OLD.size IS NOT NEW.size
+  OR OLD.attention IS NOT NEW.attention OR OLD.deleted_at IS NOT NEW.deleted_at
+BEGIN
+  INSERT INTO task_history (task_id, at, parent_id, status, priority, size, attention, deleted_at)
+  VALUES (NEW.id, ergon_now(), NEW.parent_id, NEW.status, NEW.priority, NEW.size, NEW.attention,
+          NEW.deleted_at);
+END;
+
+-- What came before is unknown; each task's state is at least as old as its
+-- last change.
+INSERT INTO task_history (task_id, at, parent_id, status, priority, size, attention, deleted_at)
+SELECT id, MAX(updated_at, COALESCE(deleted_at, updated_at)), parent_id, status, priority, size,
+       attention, deleted_at
+FROM tasks ORDER BY id;
+"#;
 /// `$ERGON_DB`, else `$XDG_DATA_HOME/ergon/ergon.db`, else
 /// `~/.local/share/ergon/ergon.db`.
 pub fn default_path() -> Result<PathBuf> {
@@ -141,6 +191,10 @@ pub fn open_in_memory() -> Result<Connection> {
 
 fn configure(conn: Connection, path: Option<&Path>) -> Result<Connection> {
     conn.busy_timeout(BUSY_TIMEOUT)?;
+    // The history triggers' clock, so `$ERGON_NOW` freezes it too.
+    conn.create_scalar_function("ergon_now", 0, FunctionFlags::SQLITE_UTF8, |_| {
+        Ok(crate::now())
+    })?;
     if let Some((from, backup)) = migrate(&conn, MIGRATIONS, path)?
         && let Some(backup) = backup
     {
@@ -396,6 +450,29 @@ mod tests {
         }
     }
 
+    /// What happened before history was kept is unknown, so upgrading starts
+    /// each task's history with its state as it is, dated to its last change.
+    #[test]
+    fn history_starts_at_the_upgrade_from_each_last_change() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("ergon.db");
+        database_at(&path, 1, FIXTURES[0].1);
+        let conn = open(&path).unwrap();
+        let state = "COALESCE(status, '-') || '@' || ";
+        let history: Vec<String> = rows(
+            &conn,
+            &format!("SELECT task_id || {state} at FROM task_history ORDER BY id"),
+        );
+        let tasks: Vec<String> = rows(
+            &conn,
+            &format!(
+                "SELECT id || {state} MAX(updated_at, COALESCE(deleted_at, updated_at))
+                 FROM tasks ORDER BY id"
+            ),
+        );
+        assert_eq!(history, tasks);
+    }
+
     #[test]
     fn v2_numbers_children_in_creation_order() {
         let dir = tempfile::tempdir().unwrap();
@@ -517,6 +594,8 @@ mod tests {
             0xcd8d_2925_364c_ec89,
             0x1c24_1903_3f02_e878,
             0x07e4_3aef_e5a3_812f,
+            0xace8_128d_9a8e_f003,
+            0xe188_582c_4ba9_8658,
         ];
         let hashes: Vec<u64> = MIGRATIONS
             .iter()

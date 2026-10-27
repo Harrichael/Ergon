@@ -99,8 +99,16 @@ enum Command {
     },
     /// Show the task tree (default: from the root).
     Tree { task: Option<TaskRef> },
-    /// List the coarsest open, unblocked work, most urgent first.
-    Ls,
+    /// List the coarsest open, unblocked work, most urgent first
+    ///
+    /// --sort orders by priority, attention, size (what's left), created or
+    /// updated instead, ascending unless followed by desc. Tasks without a
+    /// value go last either way, and ties stay most urgent, then oldest.
+    Ls {
+        /// A field, then optionally asc or desc: `--sort attention desc`.
+        #[arg(long, num_args = 1..=2, value_names = ["FIELD", "ORDER"])]
+        sort: Option<Vec<String>>,
+    },
     /// Print the project as an editable table, or apply an edited one
     ///
     /// Each row is one task: eleven cells, then the title.
@@ -364,9 +372,16 @@ fn run(cli: Cli) -> Result<()> {
             let p = project_for(&conn, &task.iter().collect::<Vec<_>>())?;
             print!("{}", tree(&conn, &p, task.as_ref())?);
         }
-        Command::Ls => {
+        Command::Ls { sort } => {
+            let sort = match sort.as_deref() {
+                None => Default::default(),
+                Some([field, order @ ..]) => {
+                    ergon::derived::Sort::parse(field, order.first().map(String::as_str))?
+                }
+                Some([]) => unreachable!("clap requires a field"),
+            };
             let tasks = Tasks::load(&conn, &project_for(&conn, &[])?)?;
-            print!("{}", view::ls(&tasks, &Derived::compute(&tasks)));
+            print!("{}", view::ls(&tasks, &Derived::compute(&tasks), sort));
         }
         Command::Outline {
             apply: true,

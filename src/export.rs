@@ -13,9 +13,9 @@ use crate::slug;
 use crate::task::{Status, Tasks, parse_attention, parse_size};
 
 /// The format this ergon writes and the newest it reads. Format 2 added
-/// sizes and format 3 attention; an older ergon would drop them, so it must
-/// refuse the export.
-const FORMAT: u32 = 3;
+/// sizes, format 3 attention and format 4 history; an older ergon would drop
+/// them, so it must refuse the export.
+const FORMAT: u32 = 4;
 
 #[derive(Serialize, Deserialize)]
 struct Export {
@@ -32,6 +32,23 @@ struct ProjectData {
     /// Every task, deleted ones included, oldest first.
     tasks: Vec<TaskData>,
     deps: Vec<Dep>,
+    /// Each task's planning state over time, oldest first. Exports before
+    /// format 4 have none; importing them starts each task's history at its
+    /// last change, as upgrading the database does.
+    #[serde(default)]
+    history: Option<Vec<HistoryData>>,
+}
+
+#[derive(Serialize, Deserialize)]
+struct HistoryData {
+    task: String,
+    at: i64,
+    parent: Option<String>,
+    status: Option<Status>,
+    priority: Option<u8>,
+    size: Option<u32>,
+    attention: Option<u8>,
+    deleted_at: Option<i64>,
 }
 
 #[derive(Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
@@ -77,6 +94,26 @@ pub fn export(conn: &Connection, projects: &[Project]) -> Result<String> {
             })
             .collect();
         deps.sort();
+        let mut stmt = conn.prepare(
+            "SELECT h.task_id, h.at, h.parent_id, h.status, h.priority, h.size, h.attention,
+                    h.deleted_at
+             FROM task_history h JOIN tasks t ON t.id = h.task_id
+             WHERE t.project_id = ?1 ORDER BY h.id",
+        )?;
+        let history = stmt
+            .query_map([p.id], |r| {
+                Ok(HistoryData {
+                    task: slug(r.get(0)?),
+                    at: r.get(1)?,
+                    parent: r.get::<_, Option<i64>>(2)?.map(slug),
+                    status: r.get(3)?,
+                    priority: r.get(4)?,
+                    size: r.get(5)?,
+                    attention: r.get(6)?,
+                    deleted_at: r.get(7)?,
+                })
+            })?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
         out.projects.push(ProjectData {
             uuid: p.uuid.clone(),
             name: p.name.clone(),
@@ -102,6 +139,7 @@ pub fn export(conn: &Connection, projects: &[Project]) -> Result<String> {
                 })
                 .collect(),
             deps,
+            history: Some(history),
         });
     }
     Ok(serde_json::to_string_pretty(&out)? + "\n")
@@ -231,6 +269,48 @@ fn import_project(conn: &Connection, p: &ProjectData) -> Result<()> {
         )?;
     }
 
+    // The triggers dated every task's history to now; the export knows better.
+    conn.execute(
+        "DELETE FROM task_history WHERE task_id IN (SELECT id FROM tasks WHERE project_id = ?1)",
+        [project_id],
+    )?;
+    match &p.history {
+        Some(history) => {
+            for h in history {
+                let id = |s: &str| {
+                    ids.get(s).copied().with_context(|| {
+                        format!("history names task {s}, which isn't in the export")
+                    })
+                };
+                conn.execute(
+                    "INSERT INTO task_history (task_id, at, parent_id, status, priority, size,
+                       attention, deleted_at)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+                    params![
+                        id(&h.task)?,
+                        h.at,
+                        h.parent.as_deref().map(id).transpose()?,
+                        h.status,
+                        h.priority,
+                        h.size,
+                        h.attention,
+                        h.deleted_at
+                    ],
+                )?;
+            }
+        }
+        None => {
+            conn.execute(
+                "INSERT INTO task_history (task_id, at, parent_id, status, priority, size,
+                   attention, deleted_at)
+                 SELECT id, MAX(updated_at, COALESCE(deleted_at, updated_at)), parent_id, status,
+                        priority, size, attention, deleted_at
+                 FROM tasks WHERE project_id = ?1 ORDER BY id",
+                [project_id],
+            )?;
+        }
+    }
+
     let project = project::by_uuid(conn, &p.uuid)?;
     Tasks::load(conn, &project)?.validate()
 }
@@ -313,12 +393,33 @@ mod tests {
         let imported = import(&mut fresh, &json).unwrap();
         assert_eq!(imported, [("alpha".into(), 6), ("beta".into(), 1)]);
         assert_eq!(export(&fresh, &all(&fresh)).unwrap(), json);
+
+        // An export from before history starts each task's at its last change.
+        let mut old: serde_json::Value = serde_json::from_str(&json).unwrap();
+        old["format"] = 3.into();
+        for p in old["projects"].as_array_mut().unwrap() {
+            p.as_object_mut().unwrap().remove("history");
+        }
+        let mut older = db::open_in_memory().unwrap();
+        import(&mut older, &old.to_string()).unwrap();
+        let starts: Vec<(i64, i64)> = older
+            .prepare(
+                "SELECT h.at, MAX(t.updated_at, COALESCE(t.deleted_at, t.updated_at))
+                 FROM task_history h JOIN tasks t ON t.id = h.task_id",
+            )
+            .unwrap()
+            .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))
+            .unwrap()
+            .collect::<rusqlite::Result<_>>()
+            .unwrap();
+        assert_eq!(starts.len(), 7, "one row per task");
+        assert!(starts.iter().all(|(at, last)| at == last));
     }
 
     #[test]
     fn refuses_bad_exports_entirely() {
         let mut conn = db::open_in_memory().unwrap();
-        let newer = r#"{"format": 4, "projects": []}"#;
+        let newer = r#"{"format": 5, "projects": []}"#;
         let err = import(&mut conn, newer).unwrap_err().to_string();
         assert!(err.contains("newer than this ergon reads"), "{err}");
 

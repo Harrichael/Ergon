@@ -71,3 +71,41 @@ dFR6
 $ ergon dep add 9cDQ qxpj
 $ ergon ls
 qxpj  p0  todo         Parent
+
+# --sort orders by another field, ascending unless followed by desc. Tasks
+# without a value go last either way; ties stay most urgent, then oldest.
+$ cd sorting
+$ ergon init sorting Root --no-launch
+Created project sorting in $ROOT/sorting
+$ ergon add Small --size 2 --attention 7 --priority p2
+qxpj
+$ ergon add Big --size 8 --attention 2 --priority p1
+FTFE
+$ ergon add Unrated --priority p0
+nHcx
+$ ergon ls
+nHcx  p0  todo         -  a?   Unrated
+FTFE  p1  todo         8  a2   Big
+qxpj  p2  todo         2  a7   Small
+$ ergon ls --sort attention
+FTFE  p1  todo         8  a2   Big
+qxpj  p2  todo         2  a7   Small
+nHcx  p0  todo         -  a?   Unrated
+$ ergon ls --sort attention desc
+qxpj  p2  todo         2  a7   Small
+FTFE  p1  todo         8  a2   Big
+nHcx  p0  todo         -  a?   Unrated
+$ ergon ls --sort size desc
+FTFE  p1  todo         8  a2   Big
+qxpj  p2  todo         2  a7   Small
+nHcx  p0  todo         -  a?   Unrated
+$ ergon ls --sort created desc
+nHcx  p0  todo         -  a?   Unrated
+FTFE  p1  todo         8  a2   Big
+qxpj  p2  todo         2  a7   Small
+$ ergon ls --sort title
+error: can't sort by "title": expected priority, attention, size, created or updated
+[exit 1]
+$ ergon ls --sort size up
+error: invalid sort order "up": expected asc or desc
+[exit 1]

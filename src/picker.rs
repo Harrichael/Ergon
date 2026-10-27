@@ -41,7 +41,7 @@ pub enum Action {
 
 impl Picker {
     pub fn new(tasks: &Tasks, derived: &Derived) -> Picker {
-        let rows: Vec<(String, String)> = view::ls_rows(tasks, derived)
+        let rows: Vec<(String, String)> = view::ls_rows(tasks, derived, Default::default())
             .into_iter()
             .map(|(id, row)| {
                 let text = anstream::adapter::strip_str(&row).to_string();

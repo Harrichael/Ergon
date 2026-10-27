@@ -41,7 +41,7 @@ root  in_progress  p-  Alpha
 # Everything: retired projects, deleted tasks, sessions, order.
 $ ergon export
 {
-  "format": 3,
+  "format": 4,
   "projects": [
     {
       "uuid": "400c6373-839f-41ec-9edf-c384f5d734e5",
@@ -130,6 +130,78 @@ $ ergon export
           "task": "nHcx",
           "depends_on": "FTFE"
         }
+      ],
+      "history": [
+        {
+          "task": "root",
+          "at": 1760000000,
+          "parent": null,
+          "status": "in_progress",
+          "priority": null,
+          "size": null,
+          "attention": null,
+          "deleted_at": null
+        },
+        {
+          "task": "qxpj",
+          "at": 1760000000,
+          "parent": "root",
+          "status": "todo",
+          "priority": 1,
+          "size": null,
+          "attention": null,
+          "deleted_at": null
+        },
+        {
+          "task": "FTFE",
+          "at": 1760000000,
+          "parent": "qxpj",
+          "status": null,
+          "priority": null,
+          "size": null,
+          "attention": null,
+          "deleted_at": null
+        },
+        {
+          "task": "nHcx",
+          "at": 1760000000,
+          "parent": "root",
+          "status": "todo",
+          "priority": null,
+          "size": null,
+          "attention": null,
+          "deleted_at": null
+        },
+        {
+          "task": "FTFE",
+          "at": 1760000000,
+          "parent": "qxpj",
+          "status": "in_progress",
+          "priority": null,
+          "size": null,
+          "attention": null,
+          "deleted_at": null
+        },
+        {
+          "task": "pQyk",
+          "at": 1760000000,
+          "parent": "nHcx",
+          "status": null,
+          "priority": null,
+          "size": null,
+          "attention": null,
+          "deleted_at": null
+        },
+        {
+          "task": "pQyk",
+          "at": 1760000000,
+          "parent": "nHcx",
+          "status": null,
+          "priority": null,
+          "size": null,
+          "attention": null,
+          "deleted_at": 1760000000
+        }
       ]
     },
     {
@@ -154,7 +226,19 @@ $ ergon export
           "position": 0
         }
       ],
-      "deps": []
+      "deps": [],
+      "history": [
+        {
+          "task": "root",
+          "at": 1760000000,
+          "parent": null,
+          "status": "in_progress",
+          "priority": null,
+          "size": null,
+          "attention": null,
+          "deleted_at": null
+        }
+      ]
     }
   ]
 }

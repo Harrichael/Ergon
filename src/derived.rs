@@ -3,6 +3,8 @@
 
 use std::collections::{HashMap, HashSet, VecDeque};
 
+use anyhow::{Result, bail};
+
 use crate::task::{Status, Tasks};
 
 /// Blocked state, effective priority, size and attention of every live task.
@@ -290,15 +292,74 @@ fn reachable(edges: &HashMap<i64, Vec<i64>>, start: i64) -> impl Iterator<Item =
     out.into_iter()
 }
 
-/// The coarsest open, unblocked work: most urgent first, then oldest.
-pub fn ls(tasks: &Tasks, derived: &Derived) -> Vec<i64> {
+/// What `ls` orders by. Each field sorts ascending unless `descending`;
+/// tasks without a value go last either way, and ties fall back to the
+/// default: most urgent, then oldest.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Sort {
+    pub field: SortField,
+    pub descending: bool,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum SortField {
+    #[default]
+    Priority,
+    Attention,
+    Size,
+    Created,
+    Updated,
+}
+
+impl Sort {
+    pub const FIELDS: &str = "priority, attention, size, created or updated";
+
+    pub fn parse(field: &str, order: Option<&str>) -> Result<Sort> {
+        let field = match field {
+            "priority" => SortField::Priority,
+            "attention" => SortField::Attention,
+            "size" => SortField::Size,
+            "created" => SortField::Created,
+            "updated" => SortField::Updated,
+            _ => bail!("can't sort by {field:?}: expected {}", Sort::FIELDS),
+        };
+        let descending = match order {
+            None | Some("asc") => false,
+            Some("desc") => true,
+            Some(o) => bail!("invalid sort order {o:?}: expected asc or desc"),
+        };
+        Ok(Sort { field, descending })
+    }
+
+    fn key(self, tasks: &Tasks, derived: &Derived, id: i64) -> Option<i64> {
+        let t = tasks.get(id);
+        match self.field {
+            SortField::Priority => derived.priority(id).map(i64::from),
+            SortField::Attention => derived.attention(id).map(i64::from),
+            SortField::Size => derived.size(id).map(|s| s.left as i64),
+            SortField::Created => Some(t.created_at),
+            SortField::Updated => Some(t.updated_at),
+        }
+    }
+}
+
+/// The coarsest open, unblocked work, in `sort` order.
+pub fn ls(tasks: &Tasks, derived: &Derived, sort: Sort) -> Vec<i64> {
     let mut out = Vec::new();
     for c in tasks.children(tasks.root().id) {
         visit(tasks, derived, c.id, &mut out);
     }
-    out.sort_by_key(|&id| {
+    let fallback = |id: i64| {
         let t = tasks.get(id);
         (derived.priority(id).unwrap_or(5), t.created_at, t.id)
+    };
+    out.sort_by(|&a, &b| {
+        let by_field = match (sort.key(tasks, derived, a), sort.key(tasks, derived, b)) {
+            (Some(x), Some(y)) if sort.descending => y.cmp(&x),
+            (Some(x), Some(y)) => x.cmp(&y),
+            (a, b) => b.is_some().cmp(&a.is_some()),
+        };
+        by_field.then_with(|| fallback(a).cmp(&fallback(b)))
     });
     out
 }
@@ -420,7 +481,7 @@ mod tests {
 
         fn ls(&self) -> Vec<String> {
             let (tasks, d) = self.eval();
-            ls(&tasks, &d)
+            ls(&tasks, &d, Sort::default())
                 .into_iter()
                 .map(|id| tasks.get(id).slug.clone())
                 .collect()

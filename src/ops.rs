@@ -428,4 +428,74 @@ mod tests {
         );
         assert!(dup.is_err());
     }
+
+    /// Every change to a task's planning state leaves a row in its history,
+    /// whichever command made it; edits that don't change it leave none.
+    #[test]
+    fn history_records_planning_changes() {
+        let mut f = Fixture::new();
+        let a = f.add(None, None);
+        let b = f.add(None, None);
+        let edit = |f: &mut Fixture, changes: Changes| {
+            edit(&mut f.conn, &f.project, &a, changes).unwrap();
+        };
+        edit(
+            &mut f,
+            Changes {
+                intent: Some("Renamed".into()),
+                ..Default::default()
+            },
+        );
+        edit(
+            &mut f,
+            Changes {
+                status: Some(Some(InProgress)),
+                ..Default::default()
+            },
+        );
+        edit(
+            &mut f,
+            Changes {
+                attention: Some(Some(4)),
+                ..Default::default()
+            },
+        );
+        edit(
+            &mut f,
+            Changes {
+                attention: Some(Some(4)),
+                ..Default::default()
+            },
+        );
+        mv(&mut f.conn, &f.project, &a, &b).unwrap();
+        rm(&mut f.conn, &f.project, &a, 0, 0).unwrap();
+        restore(&mut f.conn, &f.project, &a).unwrap();
+
+        let mut stmt = f
+            .conn
+            .prepare(
+                "SELECT COALESCE(p.slug, '-') || ' ' || COALESCE(h.status, '-') || ' '
+                   || COALESCE(h.attention, '-') || ' ' || (h.deleted_at IS NOT NULL)
+                 FROM task_history h JOIN tasks t ON t.id = h.task_id
+                 LEFT JOIN tasks p ON p.id = h.parent_id
+                 WHERE t.slug = ?1 ORDER BY h.id",
+            )
+            .unwrap();
+        let rows: Vec<String> = stmt
+            .query_map([&a], |r| r.get(0))
+            .unwrap()
+            .collect::<rusqlite::Result<_>>()
+            .unwrap();
+        assert_eq!(
+            rows,
+            [
+                "root todo - 0".to_string(),
+                "root in_progress - 0".into(),
+                "root in_progress 4 0".into(),
+                format!("{b} in_progress 4 0"),
+                format!("{b} in_progress 4 1"),
+                format!("{b} in_progress 4 0"),
+            ]
+        );
+    }
 }

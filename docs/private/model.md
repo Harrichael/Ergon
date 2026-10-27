@@ -83,6 +83,18 @@ CREATE TABLE task_deps (
   depends_on INTEGER NOT NULL REFERENCES tasks(id),
   PRIMARY KEY (task_id, depends_on)
 );
+
+CREATE TABLE task_history (                      -- written by triggers on tasks
+  id         INTEGER PRIMARY KEY,
+  task_id    INTEGER NOT NULL REFERENCES tasks(id),
+  at         INTEGER NOT NULL,                   -- unix seconds, from ergon_now()
+  parent_id  INTEGER,
+  status     TEXT,
+  priority   INTEGER,
+  size       INTEGER,
+  attention  INTEGER,
+  deleted_at INTEGER
+);
 ```
 
 The database is at `$ERGON_DB`, or `$XDG_DATA_HOME/ergon/ergon.db` (normally
@@ -216,7 +228,10 @@ children and visits each task like this:
 For example: P has children A and B. If both are unblocked, `ls` shows P. If B
 is blocked, `ls` shows A.
 
-Results are sorted by effective priority, then oldest first. Each row shows:
+Results are sorted by effective priority, then oldest first. `--sort FIELD
+[asc|desc]` sorts by `priority`, `attention`, `size` (what's left), `created`
+or `updated` instead, ascending by default; tasks without a value go last
+either way, and ties fall back to the default order. Each row shows:
 slug, effective priority, effective status, size and attention (once any
 task has one), title, and, below the top level, a dimmed `(in: <parent title>)`.
 
@@ -250,6 +265,19 @@ ergon refuses any change (add, edit, move, restore) that would break these.
 
 A task's updated time changes when the task's own intent, status, priority, size, attention, or session
 changes. Changes to its children or dependencies don't count.
+
+## History
+
+Every task's planning state is kept over time, for charts like a burndown:
+`task_history` gets a row with the task's parent, status, priority, size,
+attention and deletion when the task is added and whenever any of those
+changes, dated by ergon's clock. Triggers on `tasks` write it, so every
+command that changes a task is covered, `outline --apply` and `import`
+included; intent and session changes aren't recorded. Nothing reads it yet.
+
+History began with schema 5: upgrading gave each existing task one row, its
+state then, dated to its last change. Exports carry it (format 4); importing
+an older export starts each task's history the same way.
 
 ## Deletion
 
@@ -356,7 +384,7 @@ ergon show <ref> [--intent]
 ergon tree [<ref>]
     Indented titles with slug, effective status, effective priority, size, and
     attention.
-ergon ls
+ergon ls [--sort FIELD [asc|desc]]
 ergon outline [--json]
 ergon outline --apply [--dry-run]
 ergon outline --format
