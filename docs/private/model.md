@@ -381,9 +381,10 @@ ergon show <ref> [--intent]
     blocked; dependencies and dependents; session; timestamps; the
     children's titles as a bullet list; and the exact `ergon rm` command,
     with the subtask and dependent counts it requires.
-ergon tree [<ref>]
+ergon tree [<ref>] [--ls]
     Indented titles with slug, effective status, effective priority, size, and
-    attention.
+    attention. --ls marks the tasks `ergon ls` lists with a ▸ gutter and a
+    bold title.
 ergon ls [--sort FIELD [asc|desc]]
 ergon outline [--json]
 ergon outline --apply [--dry-run]

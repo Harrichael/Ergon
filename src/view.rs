@@ -1,6 +1,7 @@
 //! Plain-text renderings of tasks. Output may contain ANSI styles; print it
 //! through `anstream`, which strips them when they aren't supported.
 
+use std::collections::HashSet;
 use std::fmt::Write;
 
 use anstyle::{AnsiColor, Style};
@@ -183,24 +184,27 @@ pub fn show(tasks: &Tasks, derived: &Derived, id: i64, now: i64) -> String {
     out
 }
 
-/// The subtree under `id` as indented titles.
-pub fn tree(tasks: &Tasks, derived: &Derived, id: i64) -> String {
+/// The subtree under `id` as indented titles. With `mark`, the tasks in it
+/// get a `▸` gutter and a bold title.
+pub fn tree(tasks: &Tasks, derived: &Derived, id: i64, mark: Option<&HashSet<i64>>) -> String {
     let width = derived
         .sized()
         .then(|| size_width(derived, std::iter::once(id).chain(tasks.descendants(id))));
     let mut out = String::new();
-    write_tree(tasks, derived, id, 0, width, &mut out);
+    let row = Row { tasks, derived, width, mark };
+    write_tree(&row, id, 0, &mut out);
     out
 }
 
-fn write_tree(
-    tasks: &Tasks,
-    derived: &Derived,
-    id: i64,
-    depth: usize,
+struct Row<'a> {
+    tasks: &'a Tasks,
+    derived: &'a Derived,
     width: Option<usize>,
-    out: &mut String,
-) {
+    mark: Option<&'a HashSet<i64>>,
+}
+
+fn write_tree(row: &Row, id: i64, depth: usize, out: &mut String) {
+    let Row { tasks, derived, width, mark } = *row;
     let t = tasks.get(id);
     let blocked = if derived.is_blocked(id) {
         format!("  {DIM}blocked{DIM:#}")
@@ -208,18 +212,22 @@ fn write_tree(
         String::new()
     };
     let size = width.map_or(String::new(), |w| format!("{}  ", size(derived, id, w)));
+    let (gutter, title) = match mark {
+        Some(m) if m.contains(&id) => ("▸ ", format!("{STORED}{}{STORED:#}", t.title())),
+        Some(_) => ("  ", t.title().to_string()),
+        None => ("", t.title().to_string()),
+    };
     let _ = writeln!(
         out,
-        "{}{}  {}  {}  {size}{}{}{blocked}",
+        "{gutter}{}{}  {}  {}  {size}{}{title}{blocked}",
         "  ".repeat(depth),
         t.slug,
         status(tasks, id),
         priority(tasks, derived, id),
         attention_column(tasks, derived, id),
-        t.title()
     );
     for c in tasks.children(id) {
-        write_tree(tasks, derived, c.id, depth + 1, width, out);
+        write_tree(row, c.id, depth + 1, out);
     }
 }
 

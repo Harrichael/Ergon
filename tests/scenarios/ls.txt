@@ -20,6 +20,18 @@ $ ergon dep add nHcx pQyk
 $ ergon ls
 FTFE  p2  todo         First  (in: Parent)
 pQyk  p2  todo         Prerequisite
+
+# tree --ls marks the same tasks inside the tree.
+$ ergon tree --ls
+  root  in_progress  p-  Root
+    qxpj  todo         p2  Parent
+▸     FTFE  todo         p2  First
+      nHcx  todo         p2  Second  blocked
+▸   pQyk  todo         p2  Prerequisite
+$ ergon tree qxpj --ls
+  qxpj  todo         p2  Parent
+▸   FTFE  todo         p2  First
+    nHcx  todo         p2  Second  blocked
 $ ergon show nHcx
 demo/nHcx  Second
 status:    todo (inherited)

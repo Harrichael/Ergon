@@ -98,7 +98,12 @@ enum Command {
         intent: bool,
     },
     /// Show the task tree (default: from the root).
-    Tree { task: Option<TaskRef> },
+    Tree {
+        task: Option<TaskRef>,
+        /// Mark the tasks `ergon ls` would list.
+        #[arg(long)]
+        ls: bool,
+    },
     /// List the coarsest open, unblocked work, most urgent first
     ///
     /// --sort orders by priority, attention, size (what's left), created or
@@ -368,9 +373,9 @@ fn run(cli: Cli) -> Result<()> {
             let derived = Derived::compute(&tasks);
             print!("{}", view::show(&tasks, &derived, id, ergon::now()));
         }
-        Command::Tree { task } => {
+        Command::Tree { task, ls } => {
             let p = project_for(&conn, &task.iter().collect::<Vec<_>>())?;
-            print!("{}", tree(&conn, &p, task.as_ref())?);
+            print!("{}", tree(&conn, &p, task.as_ref(), ls)?);
         }
         Command::Ls { sort } => {
             let sort = match sort.as_deref() {
@@ -487,13 +492,19 @@ fn help(topic: Option<&str>) -> Result<()> {
     Ok(())
 }
 
-fn tree(conn: &Connection, p: &Project, task: Option<&TaskRef>) -> Result<String> {
+fn tree(conn: &Connection, p: &Project, task: Option<&TaskRef>, ls: bool) -> Result<String> {
     let tasks = Tasks::load(conn, p)?;
     let id = match task {
         Some(r) => tasks.live(&r.slug)?.id,
         None => tasks.root().id,
     };
-    Ok(view::tree(&tasks, &Derived::compute(&tasks), id))
+    let derived = Derived::compute(&tasks);
+    let mark = ls.then(|| {
+        ergon::derived::ls(&tasks, &derived, Default::default())
+            .into_iter()
+            .collect::<std::collections::HashSet<_>>()
+    });
+    Ok(view::tree(&tasks, &derived, id, mark.as_ref()))
 }
 
 fn run_project(conn: &Connection, cmd: ProjectCommand) -> Result<()> {

@@ -123,9 +123,10 @@ the error, then adjust or ask the user.
 ## Commands
 
 ```
-ergon tree [<slug>]
+ergon tree [<slug>] [--ls]
     The task tree, with slug, status and priority for each task, and size
-    and attention once any task has one.
+    and attention once any task has one. --ls marks with ▸ the tasks
+    `ergon ls` would list.
 ergon show <slug>
     One task in full: intent, status, priority, blocked or not,
     dependencies and dependents, subtask titles, and the command to
