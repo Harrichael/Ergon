@@ -122,7 +122,7 @@ goes wrong.
 |---------------|----------------------------------------------------------------------|
 | `todo`        | Not started.                                                         |
 | `in_progress` | Being worked on.                                                     |
-| `landing`     | Work is finished but not yet landed, e.g. a PR in review or merged but not released. |
+| `landing`     | Work is finished but not yet merged, e.g. a PR in review or waiting in a landing queue. |
 | `done`        | Finished.                                                            |
 | `cancelled`   | Won't be done.                                                       |
 
