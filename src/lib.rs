@@ -3,6 +3,7 @@ pub mod db;
 pub mod derived;
 pub mod export;
 pub mod fmt;
+pub mod gantt;
 pub mod landings;
 pub mod ops;
 pub mod outline;

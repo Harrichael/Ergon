@@ -32,6 +32,7 @@ Commands:
   mv       Move a task, with its subtree, under a new parent
   show     Show one task in full, with the choros landing sets that carry it
   tree     Show the task tree (default: from the root)
+  gantt    Chart the order open work can run in
   ls       List the coarsest open, unblocked work, most urgent first
   outline  Print the project as an editable table, or apply an edited one
   dep      Manage dependencies

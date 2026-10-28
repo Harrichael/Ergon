@@ -9,7 +9,7 @@ use ergon::refs::{self, TaskRef, TaskRefs};
 use ergon::task::{self, Status, Tasks};
 
 use ergon::derived::{Derived, Filter, Range, SortField};
-use ergon::{claude, db, export, fmt, landings, outline, picker, view};
+use ergon::{claude, db, export, fmt, gantt, landings, outline, picker, view};
 use std::io::Read;
 
 /// Minimal task tracker for dispatching work to Claude Code sessions.
@@ -107,6 +107,22 @@ enum Command {
         /// Mark the tasks `ergon ls` would list.
         #[arg(long)]
         ls: bool,
+    },
+    /// Chart the order open work can run in
+    ///
+    /// One bar per open child of TASK (default: the root). A bar runs from
+    /// when the first work under it can start to when the last ends, each
+    /// piece starting once what it waits on is done, with no limit on how
+    /// much runs at once. There are no dates: the axis counts size, and a
+    /// task of size 5 runs for 5. Unsized work runs for 1. The steps of a
+    /// sized task run one after another, sharing its size, and work waiting
+    /// on a step waits only on that step. Landing, done and cancelled tasks
+    /// don't show, and hold nothing back.
+    Gantt {
+        task: Option<TaskRef>,
+        /// Measure work by attention instead of size.
+        #[arg(long)]
+        attention: bool,
     },
     /// List the coarsest open, unblocked work, most urgent first
     ///
@@ -511,6 +527,25 @@ fn run(cli: Cli) -> Result<()> {
         Command::Tree { task, ls } => {
             let p = project_for(&conn, &task.iter().collect::<Vec<_>>())?;
             print!("{}", tree(&conn, &p, task.as_ref(), ls)?);
+        }
+        Command::Gantt { task, attention } => {
+            let p = project_for(&conn, &task.iter().collect::<Vec<_>>())?;
+            let tasks = Tasks::load(&conn, &p)?;
+            let id = match &task {
+                Some(r) => tasks.live(&r.slug)?.id,
+                None => tasks.root().id,
+            };
+            let length = if attention {
+                gantt::Length::Attention
+            } else {
+                gantt::Length::Size
+            };
+            let derived = Derived::compute(&tasks);
+            let schedule = gantt::Schedule::compute(&tasks, &derived, length);
+            print!(
+                "{}",
+                view::gantt(&tasks, &derived, &schedule, id, length, columns())
+            );
         }
         Command::Ls {
             sort,

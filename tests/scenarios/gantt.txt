@@ -1,0 +1,110 @@
+# ergon gantt: one bar per open top-level task, placed by dependencies at
+# their real depth. Work runs as soon as what it waits on is done, with no
+# limit on how much runs at once, except that a sized task's steps run one
+# after another; the axis counts size.
+
+$ ergon init demo Root --no-launch
+Created project demo in $ROOT
+
+# API's two sized parts run side by side, so it spans 5, not 8. UI's
+# Screens waits on API's Schema alone, and UI's Copy waits on nothing, so
+# UI starts at 0, then waits (the dots) until Schema is done at 3.
+$ ergon add API
+qxpj
+$ ergon add Schema --parent qxpj --size 3
+FTFE
+$ ergon add Handlers --parent qxpj --size 5
+nHcx
+$ ergon add UI
+pQyk
+$ ergon add Copy --parent pQyk --size 1
+9cDQ
+$ ergon add Screens --parent pQyk --size 8
+dFR6
+$ ergon dep add dFR6 FTFE
+$ COLUMNS=80 ergon gantt
+                      0   2   4   6   8   10
+qxpj  todo         8  ██████████              API
+pQyk  todo         9  ██····████████████████  UI
+· waiting on other work
+
+# Unsized work is drawn as 1. Docs waits on Review, so far the only step of
+# Handlers, which takes all of its size: Docs starts at 5.
+$ ergon add Docs
+qwpT
+$ ergon add Review --parent nHcx
+AENA
+$ ergon dep add qwpT AENA
+$ COLUMNS=80 ergon gantt
+                      0   2   4   6   8   10
+qxpj  todo         8  ██████████              API
+pQyk  todo         9  ██····████████████████  UI
+qwpT  todo         -            ▒▒            Docs
+▒ unsized, drawn as 1   · waiting on other work
+
+# Landing, done and cancelled tasks don't show and hold nothing back: with
+# Schema landing, Screens starts at once.
+$ ergon edit FTFE --status landing
+$ ergon add Shipped --status landing
+FubR
+$ ergon add Old --status done
+LuM4
+$ COLUMNS=80 ergon gantt
+                        0  1  2  3  4  5  6  7  8
+qxpj  todo         5/8  ███████████████           API
+pQyk  todo         9    ████████████████████████  UI
+qwpT  todo         -                   ▒▒▒        Docs
+▒ unsized, drawn as 1
+
+# Given a task, the bars are its children.
+$ COLUMNS=80 ergon gantt pQyk
+                      0   1   2   3   4   5   6   7   8
+9cDQ  todo         1  ████                              Copy
+dFR6  todo         8  ████████████████████████████████  Screens
+
+# --attention measures work by attention instead.
+$ ergon edit 9cDQ --attention 3
+$ ergon edit dFR6 --attention 5
+$ COLUMNS=80 ergon gantt --attention
+                        0     1     2     3     4     5
+qxpj  todo         a?   ▒▒▒▒▒▒                          API
+pQyk  todo         a5   ██████████████████████████████  UI
+qwpT  todo         a?         ▒▒▒▒▒▒                    Docs
+▒ unknown attention, drawn as 1
+
+# A narrow terminal squeezes the axis; every bar keeps at least a cell.
+$ ergon add Big --size 21
+bfLH
+$ COLUMNS=40 ergon gantt
+                        0   10   20
+qxpj  todo         5/8  ██          API
+pQyk  todo         9    ███         UI
+qwpT  todo         -      ▒         Docs
+bfLH  todo         21   ██████████  Big
+▒ unsized, drawn as 1
+$ ergon edit bfLH --status cancelled
+
+# Work can sit between two steps of a sized task. Tests waits on Docs, which
+# waits on Review: Review takes the first half of Handlers, Docs runs after
+# it, and Tests takes the second half after Docs. Handlers waits between.
+$ ergon add Tests --parent nHcx
+Hwgf
+$ ergon dep add Hwgf qwpT
+$ COLUMNS=80 ergon gantt
+                        0  1  2  3  4  5  6  7  8
+qxpj  todo         5/8  ███████···████████        API
+pQyk  todo         9    ████████████████████████  UI
+qwpT  todo         -           ▒▒▒                Docs
+▒ unsized, drawn as 1   · waiting on other work
+
+# Given a sized task, the bars are its steps, each a third of its size now.
+# Review waits on Lint, so Lint goes ahead of it, though it's later in the
+# tree; Tests still waits on Docs, which waits on Review.
+$ ergon add Lint --parent nHcx
+xg4A
+$ ergon dep add AENA xg4A
+$ COLUMNS=80 ergon gantt nHcx
+                      0    1    2    3    4    5    6
+AENA  todo         -          ████████                Review
+Hwgf  todo         -                       █████████  Tests
+xg4A  todo         -  ████████                        Lint

@@ -8,6 +8,7 @@ use anstyle::{AnsiColor, Style};
 
 use crate::derived::{self, Derived, Filter, Sort};
 use crate::fmt::timestamp;
+use crate::gantt::{Length, Schedule, Span};
 use crate::landings::{self, At, Landing};
 use crate::task::Tasks;
 
@@ -329,6 +330,143 @@ fn write_tree(row: &Row, id: i64, depth: usize, out: &mut String) {
     for c in tasks.children(id) {
         write_tree(row, c.id, depth + 1, out);
     }
+}
+
+/// `ergon gantt`: a bar for each open child of `id`, from when its first
+/// unit of work can start to when its last ends. `█` is work, `▒` work of
+/// unknown length (drawn as 1), and `·` a stretch where it's all waiting.
+pub fn gantt(
+    tasks: &Tasks,
+    derived: &Derived,
+    schedule: &Schedule,
+    id: i64,
+    length: Length,
+    columns: Option<usize>,
+) -> String {
+    let rows: Vec<(i64, Vec<Span>)> = tasks
+        .children(id)
+        .filter(|c| tasks.effective_status(c.id).is_open())
+        .map(|c| (c.id, schedule.parts(tasks, c.id)))
+        .collect();
+    // Shares can end between whole numbers, and summing them can land a
+    // hair past one.
+    let Some(total) = rows
+        .iter()
+        .flat_map(|(_, p)| p)
+        .map(|s| (s.end - 1e-9).ceil() as u64)
+        .max()
+    else {
+        return String::new();
+    };
+
+    // The column the bars measure, as `tree` shows it.
+    let label_width = match length {
+        Length::Size if derived.sized() => Some(size_width(derived, rows.iter().map(|r| r.0))),
+        Length::Attention if derived.rated() => Some(3),
+        _ => None,
+    };
+    let label = |id: i64| {
+        label_width.map(|w| match length {
+            Length::Size => size(derived, id, w),
+            Length::Attention => attention(tasks, derived, id),
+        })
+    };
+    let slug_width = rows
+        .iter()
+        .map(|&(id, _)| tasks.get(id).slug.len())
+        .max()
+        .unwrap_or(0);
+    let prefix = slug_width + 2 + 11 + 2 + label_width.map_or(0, |w| w + 2);
+
+    // Whole cells per unit while the chart fits, leaving room for titles.
+    let room = columns
+        .unwrap_or(80)
+        .saturating_sub(prefix + 2 + 24)
+        .max(10) as u64;
+    let area = if total <= room {
+        total * (room / total)
+    } else {
+        room
+    };
+    let cell = |x: f64| (x * area as f64 / total as f64) as usize;
+
+    let mut out = format!(
+        "{}{}\n",
+        " ".repeat(prefix),
+        ruler(total, area, |m| cell(m as f64))
+    );
+    let (mut unknown, mut waiting) = (false, false);
+    for (id, parts) in &rows {
+        let mut bar = vec![' '; area as usize];
+        let first = parts[0].start;
+        let last = parts.iter().map(|s| s.end).fold(first, f64::max);
+        let (from, to) = (cell(first), cell(last).max(cell(first) + 1));
+        bar[from..to].fill('·');
+        // Known work drawn last, so it shows where it overlaps unknown work.
+        for known in [false, true] {
+            for s in parts.iter().filter(|s| s.known == known) {
+                let a = cell(s.start);
+                let b = cell(s.end).max(a + 1);
+                bar[a..b].fill(if known { '█' } else { '▒' });
+            }
+        }
+        unknown |= bar.contains(&'▒');
+        waiting |= bar.contains(&'·');
+        let bar: String = bar
+            .iter()
+            .map(|&c| match c {
+                '█' | ' ' => c.to_string(),
+                _ => format!("{DIM}{c}{DIM:#}"),
+            })
+            .collect();
+        let t = tasks.get(*id);
+        let label = label(*id).map_or(String::new(), |l| format!("{l}  "));
+        let _ = writeln!(
+            out,
+            "{:<slug_width$}  {}  {label}{bar}  {}",
+            t.slug,
+            status(tasks, *id),
+            t.title()
+        );
+    }
+
+    let mut key = Vec::new();
+    if unknown {
+        let what = match length {
+            Length::Size => "unsized",
+            Length::Attention => "unknown attention",
+        };
+        key.push(format!("▒ {what}, drawn as 1"));
+    }
+    if waiting {
+        key.push("· waiting on other work".to_string());
+    }
+    if !key.is_empty() {
+        let _ = writeln!(out, "{DIM}{}{DIM:#}", key.join("   "));
+    }
+    out
+}
+
+/// The axis over the bars: `0`, then marks far enough apart to read.
+fn ruler(total: u64, area: u64, cell: impl Fn(u64) -> usize) -> String {
+    let gap = total.to_string().len() as u64 + 2;
+    let step = [1, 2, 5]
+        .into_iter()
+        .cycle()
+        .zip((0..).map(|i| 10u64.pow(i / 3)))
+        .map(|(m, p)| m * p)
+        .find(|&s| s * area >= gap * total)
+        .expect("some step spans the whole axis");
+    let mut line = String::new();
+    for mark in (0..=total).step_by(step as usize) {
+        let at = cell(mark);
+        if at < line.len() {
+            continue;
+        }
+        line.push_str(&" ".repeat(at - line.len()));
+        line.push_str(&mark.to_string());
+    }
+    line.trim_end().to_string()
 }
 
 /// `ergon ls`: one row per task ready to start that `filter` keeps, laid out
