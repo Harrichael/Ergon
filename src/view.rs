@@ -16,6 +16,7 @@ const STORED: Style = Style::new().bold();
 const INFERRED: Style = AnsiColor::Cyan.on_default();
 const DIM: Style = Style::new().dimmed();
 const GROUP: Style = Style::new().bold();
+const LS: Style = AnsiColor::Green.on_default();
 
 /// Effective priority, bold if stored and cyan if inferred.
 fn priority(tasks: &Tasks, derived: &Derived, id: i64) -> String {
@@ -335,14 +336,23 @@ fn write_tree(row: &Row, id: i64, depth: usize, out: &mut String) {
 /// `ergon gantt`: a bar for each open child of `id`, from when its first
 /// unit of work can start to when its last ends. `█` is work, `▒` work of
 /// unknown length (drawn as 1), and `·` a stretch where it's all waiting.
+/// With `mark`, work at or under the tasks in it is `▓`, whatever its length.
 pub fn gantt(
     tasks: &Tasks,
     derived: &Derived,
     schedule: &Schedule,
     id: i64,
     length: Length,
+    mark: Option<&HashSet<i64>>,
     columns: Option<usize>,
 ) -> String {
+    let marked = |s: &Span| {
+        mark.is_some_and(|m| {
+            std::iter::once(s.task)
+                .chain(tasks.ancestors(s.task))
+                .any(|t| m.contains(&t))
+        })
+    };
     let rows: Vec<(i64, Vec<Span>)> = tasks
         .children(id)
         .filter(|c| tasks.effective_status(c.id).is_open())
@@ -395,27 +405,35 @@ pub fn gantt(
         " ".repeat(prefix),
         ruler(total, area, |m| cell(m as f64))
     );
-    let (mut unknown, mut waiting) = (false, false);
+    let (mut unknown, mut waiting, mut listed) = (false, false, false);
     for (id, parts) in &rows {
         let mut bar = vec![' '; area as usize];
         let first = parts[0].start;
         let last = parts.iter().map(|s| s.end).fold(first, f64::max);
         let (from, to) = (cell(first), cell(last).max(cell(first) + 1));
         bar[from..to].fill('·');
-        // Known work drawn last, so it shows where it overlaps unknown work.
-        for known in [false, true] {
-            for s in parts.iter().filter(|s| s.known == known) {
-                let a = cell(s.start);
-                let b = cell(s.end).max(a + 1);
-                bar[a..b].fill(if known { '█' } else { '▒' });
-            }
+        // Drawn in rising precedence, so where pieces share a cell, marked
+        // work shows over known work, and known over unknown.
+        let glyph = |s: &Span| match (marked(s), s.known) {
+            (true, _) => (2, '▓'),
+            (false, true) => (1, '█'),
+            (false, false) => (0, '▒'),
+        };
+        let mut parts: Vec<&Span> = parts.iter().collect();
+        parts.sort_by_key(|s| glyph(s).0);
+        for s in parts {
+            let a = cell(s.start);
+            let b = cell(s.end).max(a + 1);
+            bar[a..b].fill(glyph(s).1);
         }
         unknown |= bar.contains(&'▒');
         waiting |= bar.contains(&'·');
+        listed |= bar.contains(&'▓');
         let bar: String = bar
             .iter()
             .map(|&c| match c {
                 '█' | ' ' => c.to_string(),
+                '▓' => format!("{LS}{c}{LS:#}"),
                 _ => format!("{DIM}{c}{DIM:#}"),
             })
             .collect();
@@ -426,11 +444,17 @@ pub fn gantt(
             "{:<slug_width$}  {}  {label}{bar}  {}",
             t.slug,
             status(tasks, *id),
-            t.title()
+            match columns {
+                Some(c) => ellipsize(t.title(), c.saturating_sub(prefix + area as usize + 2)),
+                None => t.title().to_string(),
+            }
         );
     }
 
     let mut key = Vec::new();
+    if listed {
+        key.push(format!("{DIM:#}{LS}▓{LS:#}{DIM} in ergon ls"));
+    }
     if unknown {
         let what = match length {
             Length::Size => "unsized",
@@ -445,6 +469,18 @@ pub fn gantt(
         let _ = writeln!(out, "{DIM}{}{DIM:#}", key.join("   "));
     }
     out
+}
+
+/// `text` cut to `width` characters, ending in `…` when cut.
+fn ellipsize(text: &str, width: usize) -> String {
+    if text.chars().count() <= width {
+        return text.to_string();
+    }
+    if width == 0 {
+        return String::new();
+    }
+    let kept: String = text.chars().take(width.saturating_sub(1)).collect();
+    kept + "…"
 }
 
 /// The axis over the bars: `0`, then marks far enough apart to read.

@@ -148,14 +148,27 @@ fn compute_attention(
     attention
 }
 
-/// A sized task counts its own size and nothing under it. An unsized one adds
-/// up its children; a child with nothing sized at all is unsized work, which
-/// makes the sums partial. Cancelled work counts for nothing.
+/// A sized task counts its own size and nothing under it, split evenly
+/// among its steps: what's left is the open steps' shares, rounded up so
+/// open work never reads as finished. An
+/// unsized one adds up its children; a child with nothing sized at all is
+/// unsized work, which makes the sums partial. Cancelled work counts for
+/// nothing.
 fn compute_size(tasks: &Tasks, id: i64, out: &mut HashMap<i64, Size>) -> Option<Size> {
     let status = tasks.effective_status(id);
     if let Some(n) = tasks.get(id).size {
+        let steps = steps(tasks, id);
+        let open = steps
+            .iter()
+            .filter(|&&t| tasks.effective_status(t).is_open())
+            .count();
+        let left = match (status.is_open(), steps.len()) {
+            (false, _) => 0,
+            (true, 0) => n as u64,
+            (true, all) => (n as u64 * open as u64).div_ceil(all as u64),
+        };
         let size = Size {
-            left: if status.is_open() { n as u64 } else { 0 },
+            left,
             total: n as u64,
             partial: false,
             stored: true,
@@ -189,6 +202,17 @@ fn compute_size(tasks: &Tasks, id: i64, out: &mut HashMap<i64, Size>) -> Option<
     sum.partial |= gap;
     out.insert(id, sum);
     Some(sum)
+}
+
+/// The steps of a sized task its size is split among: those under it that
+/// aren't cancelled and have no such steps under them.
+pub fn steps(tasks: &Tasks, id: i64) -> Vec<i64> {
+    let counted = |t: i64| tasks.effective_status(t) != Status::Cancelled;
+    tasks
+        .descendants(id)
+        .into_iter()
+        .filter(|&t| counted(t) && !tasks.children(t).any(|c| counted(c.id)))
+        .collect()
 }
 
 fn mark_blocked(tasks: &Tasks, id: i64, inherited: bool, out: &mut HashSet<i64>) {

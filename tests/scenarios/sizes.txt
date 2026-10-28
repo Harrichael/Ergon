@@ -99,3 +99,39 @@ pQyk  -            ~todo         -  -  13  ~8  -  -     -  -           - UI
 9cDQ  cancelled    ~cancelled    -  -  -  -  -  -      -  -           - Docs
 EOF
 pQyk UI: size 8 -> 13
+
+# A sized task's size is split evenly among its steps, so landing or done
+# steps take their shares out of what's left, rounded up so open work
+# never reads as finished; cancelled steps leave the split. UI's 13 over
+# Layout and Forms: 6.5 left, shown as 7.
+$ ergon add Layout --parent pQyk
+dFR6
+$ ergon add Forms --parent pQyk
+qwpT
+$ ergon add Charts --parent pQyk
+AENA
+$ ergon edit dFR6 --status done
+$ ergon edit AENA --status cancelled
+$ ergon tree pQyk
+pQyk  todo         p-  7/13  UI
+  dFR6  done         p-  -     Layout
+  qwpT  todo         p-  -     Forms
+  AENA  cancelled    p-  -     Charts
+
+# A third of 1 left still shows as 1, not 0: open work never reads as
+# finished.
+$ ergon add Tiny --size 1
+FubR
+$ ergon add a --parent FubR
+LuM4
+$ ergon add b --parent FubR
+bfLH
+$ ergon add c --parent FubR
+Hwgf
+$ ergon edit LuM4 --status done
+$ ergon edit bfLH --status landing
+$ ergon tree FubR
+FubR  todo         p-  1  Tiny
+  LuM4  done         p-  -  a
+  bfLH  landing      p-  -  b
+  Hwgf  todo         p-  -  c

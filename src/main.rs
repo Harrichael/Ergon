@@ -123,6 +123,9 @@ enum Command {
         /// Measure work by attention instead of size.
         #[arg(long)]
         attention: bool,
+        /// Mark the work `ergon ls` would list.
+        #[arg(long)]
+        ls: bool,
     },
     /// List the coarsest open, unblocked work, most urgent first
     ///
@@ -528,7 +531,11 @@ fn run(cli: Cli) -> Result<()> {
             let p = project_for(&conn, &task.iter().collect::<Vec<_>>())?;
             print!("{}", tree(&conn, &p, task.as_ref(), ls)?);
         }
-        Command::Gantt { task, attention } => {
+        Command::Gantt {
+            task,
+            attention,
+            ls,
+        } => {
             let p = project_for(&conn, &task.iter().collect::<Vec<_>>())?;
             let tasks = Tasks::load(&conn, &p)?;
             let id = match &task {
@@ -542,9 +549,22 @@ fn run(cli: Cli) -> Result<()> {
             };
             let derived = Derived::compute(&tasks);
             let schedule = gantt::Schedule::compute(&tasks, &derived, length);
+            let mark = ls.then(|| {
+                ergon::derived::ls(&tasks, &derived, Default::default())
+                    .into_iter()
+                    .collect::<std::collections::HashSet<_>>()
+            });
             print!(
                 "{}",
-                view::gantt(&tasks, &derived, &schedule, id, length, columns())
+                view::gantt(
+                    &tasks,
+                    &derived,
+                    &schedule,
+                    id,
+                    length,
+                    mark.as_ref(),
+                    columns()
+                )
             );
         }
         Command::Ls {

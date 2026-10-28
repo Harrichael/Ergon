@@ -4,9 +4,10 @@
 //!
 //! The pieces placed are open tasks with nothing open under them. A sized
 //! task is one unit of work, so its steps are the exception: they run one
-//! after another, sharing its size evenly, so they add back up to it. Work
-//! that waits on a step waits only on that step's share. Landing, done and
-//! cancelled work hold nothing back, as in `ls`.
+//! after another, sharing its size evenly, so they add back up to it, less
+//! the shares of steps landing or done. Work that waits on a step waits only
+//! on that step's share. Landing, done and cancelled work hold nothing back,
+//! as in `ls`.
 
 use std::collections::{HashMap, HashSet};
 
@@ -26,6 +27,7 @@ pub enum Length {
 /// its sized task can start and end between whole numbers.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Span {
+    pub task: i64,
     pub start: f64,
     pub end: f64,
     pub known: bool,
@@ -109,6 +111,7 @@ impl Schedule {
             spans.insert(
                 p.id,
                 Span {
+                    task: p.id,
                     start,
                     end,
                     known: p.known,
@@ -143,22 +146,27 @@ fn find_pieces(tasks: &Tasks, id: i64, length: &impl Fn(i64) -> (f64, bool), out
         return;
     }
     if tasks.get(id).size.is_some() {
-        let steps: Vec<i64> = tasks
-            .descendants(id)
-            .into_iter()
-            .filter(|&t| open(t) && !tasks.children(t).any(|c| open(c.id)))
-            .collect();
+        let all = derived::steps(tasks, id);
+        let steps: Vec<i64> = all.iter().copied().filter(|&t| open(t)).collect();
         let (n, known) = length(id);
         if steps.is_empty() {
+            // With every step landing or done, what's left is the task's own
+            // wrap-up, of unknown length, as for an unsized task whose
+            // children all are.
+            let (length, known) = if all.is_empty() {
+                (n, known)
+            } else {
+                (1.0, false)
+            };
             out.push(Piece {
                 id,
                 sized: None,
-                length: n,
+                length,
                 known,
             });
             return;
         }
-        let share = n / steps.len() as f64;
+        let share = n / all.len() as f64;
         out.extend(steps.into_iter().map(|t| Piece {
             id: t,
             sized: Some(id),

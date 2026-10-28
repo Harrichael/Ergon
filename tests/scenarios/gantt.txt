@@ -108,3 +108,34 @@ $ COLUMNS=80 ergon gantt nHcx
 AENA  todo         -          ████████                Review
 Hwgf  todo         -                       █████████  Tests
 xg4A  todo         -  ████████                        Lint
+
+# --ls marks the work `ergon ls` lists, down to the pieces of a bar.
+$ ergon ls
+pQyk  p-  todo         9  a5   UI
+xg4A  p-  todo         -  a?   Lint  (in: Handlers)
+$ COLUMNS=80 ergon gantt --ls
+                        0  1  2  3  4  5  6  7  8
+qxpj  todo         5/8  ▓▓▓▓▓█████···█████        API
+pQyk  todo         9    ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓  UI
+qwpT  todo         -              ▒▒▒             Docs
+▓ in ergon ls   ▒ unsized, drawn as 1   · waiting on other work
+
+# Titles are cut to the terminal's width, never wrapped.
+$ ergon add "Write the migration guide for the new storage layout"
+QHcE
+$ COLUMNS=60 ergon gantt
+                        0    5
+qxpj  todo         5/8  ███·██    API
+pQyk  todo         9    ████████  UI
+qwpT  todo         -       ▒      Docs
+QHcE  todo         -    ▒         Write the migration guide…
+▒ unsized, drawn as 1   · waiting on other work
+
+# A landing or done step takes its share out of its sized task, just as a
+# landing child comes out of an unsized task: with Lint landing, Handlers
+# runs for two thirds of its 5.
+$ ergon edit xg4A --status landing
+$ COLUMNS=80 ergon gantt nHcx
+                      0     1     2     3     4     5
+AENA  todo         -  ██████████                      Review
+Hwgf  todo         -                  ██████████      Tests
