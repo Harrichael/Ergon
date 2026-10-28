@@ -23,9 +23,9 @@ $ ergon add Screens --parent pQyk --size 8
 dFR6
 $ ergon dep add dFR6 FTFE
 $ COLUMNS=80 ergon gantt
-                      0   2   4   6   8   10
-qxpj  todo         8  ██████████              API
-pQyk  todo         9  ██····████████████████  UI
+                   0     2     4     6     8     10
+qxpj  todo         ███████████████                    API
+pQyk  todo         ███······████████████████████████  UI
 · waiting on other work
 
 # Unsized work is drawn as 1. Docs waits on Review, so far the only step of
@@ -36,10 +36,10 @@ $ ergon add Review --parent nHcx
 AENA
 $ ergon dep add qwpT AENA
 $ COLUMNS=80 ergon gantt
-                      0   2   4   6   8   10
-qxpj  todo         8  ██████████              API
-pQyk  todo         9  ██····████████████████  UI
-qwpT  todo         -            ▒▒            Docs
+                   0     2     4     6     8     10
+qxpj  todo         ███████████████                    API
+pQyk  todo         ███······████████████████████████  UI
+qwpT  todo                        ▒▒▒                 Docs
 ▒ unsized, drawn as 1   · waiting on other work
 
 # Landing, done and cancelled tasks don't show and hold nothing back: with
@@ -50,37 +50,37 @@ FubR
 $ ergon add Old --status done
 LuM4
 $ COLUMNS=80 ergon gantt
-                        0  1  2  3  4  5  6  7  8
-qxpj  todo         5/8  ███████████████           API
-pQyk  todo         9    ████████████████████████  UI
-qwpT  todo         -                   ▒▒▒        Docs
+                   0   1   2   3   4   5   6   7   8
+qxpj  todo         ████████████████████              API
+pQyk  todo         ████████████████████████████████  UI
+qwpT  todo                             ▒▒▒▒          Docs
 ▒ unsized, drawn as 1
 
 # Given a task, the bars are its children.
 $ COLUMNS=80 ergon gantt pQyk
-                      0   1   2   3   4   5   6   7   8
-9cDQ  todo         1  ████                              Copy
-dFR6  todo         8  ████████████████████████████████  Screens
+                   0   1   2   3   4   5   6   7   8
+9cDQ  todo         ████                              Copy
+dFR6  todo         ████████████████████████████████  Screens
 
 # --attention measures work by attention instead.
 $ ergon edit 9cDQ --attention 3
 $ ergon edit dFR6 --attention 5
 $ COLUMNS=80 ergon gantt --attention
-                        0     1     2     3     4     5
-qxpj  todo         a?   ▒▒▒▒▒▒                          API
-pQyk  todo         a5   ██████████████████████████████  UI
-qwpT  todo         a?         ▒▒▒▒▒▒                    Docs
+                   0      1      2      3      4      5
+qxpj  todo         ▒▒▒▒▒▒▒                              API
+pQyk  todo         ███████████████████████████████████  UI
+qwpT  todo                ▒▒▒▒▒▒▒                       Docs
 ▒ unknown attention, drawn as 1
 
 # A narrow terminal squeezes the axis; every bar keeps at least a cell.
 $ ergon add Big --size 21
 bfLH
 $ COLUMNS=40 ergon gantt
-                        0   10   20
-qxpj  todo         5/8  ██          API
-pQyk  todo         9    ███         UI
-qwpT  todo         -      ▒         Docs
-bfLH  todo         21   ██████████  Big
+                   0   10   20
+qxpj  todo         ██          API
+pQyk  todo         ███         UI
+qwpT  todo           ▒         Docs
+bfLH  todo         ██████████  Big
 ▒ unsized, drawn as 1
 $ ergon edit bfLH --status cancelled
 
@@ -91,10 +91,10 @@ $ ergon add Tests --parent nHcx
 Hwgf
 $ ergon dep add Hwgf qwpT
 $ COLUMNS=80 ergon gantt
-                        0  1  2  3  4  5  6  7  8
-qxpj  todo         5/8  ███████···████████        API
-pQyk  todo         9    ████████████████████████  UI
-qwpT  todo         -           ▒▒▒                Docs
+                   0   1   2   3   4   5   6   7   8
+qxpj  todo         ██████████····██████████          API
+pQyk  todo         ████████████████████████████████  UI
+qwpT  todo                   ▒▒▒▒                    Docs
 ▒ unsized, drawn as 1   · waiting on other work
 
 # Given a sized task, the bars are its steps, each a third of its size now.
@@ -104,31 +104,42 @@ $ ergon add Lint --parent nHcx
 xg4A
 $ ergon dep add AENA xg4A
 $ COLUMNS=80 ergon gantt nHcx
-                      0    1    2    3    4    5    6
-AENA  todo         -          ████████                Review
-Hwgf  todo         -                       █████████  Tests
-xg4A  todo         -  ████████                        Lint
+                   0    1    2    3    4    5    6
+AENA  todo                 ████████                Review
+Hwgf  todo                              █████████  Tests
+xg4A  todo         ████████                        Lint
 
 # --ls marks the work `ergon ls` lists, down to the pieces of a bar.
 $ ergon ls
 pQyk  p-  todo         9  a5   UI
 xg4A  p-  todo         -  a?   Lint  (in: Handlers)
 $ COLUMNS=80 ergon gantt --ls
-                        0  1  2  3  4  5  6  7  8
-qxpj  todo         5/8  ▓▓▓▓▓█████···█████        API
-pQyk  todo         9    ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓  UI
-qwpT  todo         -              ▒▒▒             Docs
+                   0   1   2   3   4   5   6   7   8
+qxpj  todo         ▓▓▓▓▓▓███████····███████          API
+pQyk  todo         ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓  UI
+qwpT  todo                      ▒▒▒▒                 Docs
 ▓ in ergon ls   ▒ unsized, drawn as 1   · waiting on other work
 
 # Titles are cut to the terminal's width, never wrapped.
 $ ergon add "Write the migration guide for the new storage layout"
 QHcE
 $ COLUMNS=60 ergon gantt
-                        0    5
-qxpj  todo         5/8  ███·██    API
-pQyk  todo         9    ████████  UI
-qwpT  todo         -       ▒      Docs
-QHcE  todo         -    ▒         Write the migration guide…
+                   0    5
+qxpj  todo         ███·██    API
+pQyk  todo         ████████  UI
+qwpT  todo            ▒      Docs
+QHcE  todo         ▒         Write the migration guide for …
+▒ unsized, drawn as 1   · waiting on other work
+
+# Bars come first, but zoomed in to several cells per unit, they give up
+# to half of that so the longest title fits whole: here 3 cells per unit
+# instead of 6.
+$ COLUMNS=100 ergon gantt
+                   0  1  2  3  4  5  6  7  8
+qxpj  todo         ██████████···█████        API
+pQyk  todo         ████████████████████████  UI
+qwpT  todo                   ▒▒▒             Docs
+QHcE  todo         ▒▒▒                       Write the migration guide for the new storage layout
 ▒ unsized, drawn as 1   · waiting on other work
 
 # A landing or done step takes its share out of its sized task, just as a
@@ -136,6 +147,6 @@ QHcE  todo         -    ▒         Write the migration guide…
 # runs for two thirds of its 5.
 $ ergon edit xg4A --status landing
 $ COLUMNS=80 ergon gantt nHcx
-                      0     1     2     3     4     5
-AENA  todo         -  ██████████                      Review
-Hwgf  todo         -                  ██████████      Tests
+                   0      1      2      3      4      5
+AENA  todo         ███████████                          Review
+Hwgf  todo                           ████████████       Tests

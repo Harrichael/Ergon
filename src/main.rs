@@ -556,15 +556,7 @@ fn run(cli: Cli) -> Result<()> {
             });
             print!(
                 "{}",
-                view::gantt(
-                    &tasks,
-                    &derived,
-                    &schedule,
-                    id,
-                    length,
-                    mark.as_ref(),
-                    columns()
-                )
+                view::gantt(&tasks, &schedule, id, length, mark.as_ref(), columns())
             );
         }
         Command::Ls {

@@ -339,7 +339,6 @@ fn write_tree(row: &Row, id: i64, depth: usize, out: &mut String) {
 /// With `mark`, work at or under the tasks in it is `▓`, whatever its length.
 pub fn gantt(
     tasks: &Tasks,
-    derived: &Derived,
     schedule: &Schedule,
     id: i64,
     length: Length,
@@ -369,34 +368,33 @@ pub fn gantt(
         return String::new();
     };
 
-    // The column the bars measure, as `tree` shows it.
-    let label_width = match length {
-        Length::Size if derived.sized() => Some(size_width(derived, rows.iter().map(|r| r.0))),
-        Length::Attention if derived.rated() => Some(3),
-        _ => None,
-    };
-    let label = |id: i64| {
-        label_width.map(|w| match length {
-            Length::Size => size(derived, id, w),
-            Length::Attention => attention(tasks, derived, id),
-        })
-    };
     let slug_width = rows
         .iter()
         .map(|&(id, _)| tasks.get(id).slug.len())
         .max()
         .unwrap_or(0);
-    let prefix = slug_width + 2 + 11 + 2 + label_width.map_or(0, |w| w + 2);
+    let prefix = slug_width + 2 + 11 + 2;
 
     // Whole cells per unit while the chart fits, leaving room for titles.
     let room = columns
         .unwrap_or(80)
         .saturating_sub(prefix + 2 + 24)
         .max(10) as u64;
-    let area = if total <= room {
-        total * (room / total)
-    } else {
-        room
+    // Bars come first, but when zoomed in to several cells per unit, they
+    // give up to half of that so the longest title fits whole.
+    let longest = rows
+        .iter()
+        .map(|&(id, _)| tasks.get(id).title().chars().count())
+        .max()
+        .unwrap_or(0) as u64;
+    let area = match columns {
+        _ if total > room => room,
+        None => total * (room / total),
+        Some(c) => {
+            let zoom = room / total;
+            let fits = (c as u64).saturating_sub(prefix as u64 + 2 + longest) / total;
+            total * fits.clamp(zoom.div_ceil(2), zoom)
+        }
     };
     let cell = |x: f64| (x * area as f64 / total as f64) as usize;
 
@@ -438,17 +436,16 @@ pub fn gantt(
             })
             .collect();
         let t = tasks.get(*id);
-        let label = label(*id).map_or(String::new(), |l| format!("{l}  "));
-        let _ = writeln!(
-            out,
-            "{:<slug_width$}  {}  {label}{bar}  {}",
+        let title = match columns {
+            Some(c) => ellipsize(t.title(), c.saturating_sub(prefix + area as usize + 2)),
+            None => t.title().to_string(),
+        };
+        let row = format!(
+            "{:<slug_width$}  {}  {bar}  {title}",
             t.slug,
-            status(tasks, *id),
-            match columns {
-                Some(c) => ellipsize(t.title(), c.saturating_sub(prefix + area as usize + 2)),
-                None => t.title().to_string(),
-            }
+            status(tasks, *id)
         );
+        let _ = writeln!(out, "{}", row.trim_end());
     }
 
     let mut key = Vec::new();
