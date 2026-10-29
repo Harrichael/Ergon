@@ -144,3 +144,26 @@ Plan
 
 Dependents:
   - AENA  todo         Charge
+
+# --sort blocks orders by that size, in kanban's cells and in ls alike;
+# work that blocks nothing counts 0.
+$ COLUMNS=120 ergon kanban --sort blocks desc
+todo (5)                      in_progress (0)               landing (0)                   done (1)
+────────────────────────────  ────────────────────────────  ────────────────────────────  ────────────────────────────
+ready (2)                                                                                 FubR Old
+qxpj Schema
+     3 · a4 · blocks 13+
+qwpT Plan
+     blocks 6.5
+blocked (3)
+FTFE API
+     5 · blocks 8+
+nHcx Client
+     8+
+AENA Charge
+$ ergon ls --sort blocks desc
+qxpj  p-  todo         3  a4   Schema
+qwpT  p-  todo         -  a?   Plan  (in: Billing)
+$ ergon ls --sort blocks
+qwpT  p-  todo         -  a?   Plan  (in: Billing)
+qxpj  p-  todo         3  a4   Schema

@@ -11,7 +11,7 @@
 
 use std::collections::{BTreeMap, HashMap};
 
-use crate::derived::{self, Derived};
+use crate::derived::{Derived, Sort};
 use crate::landings::{Landing, Seen};
 use crate::task::{Status, Tasks};
 
@@ -62,7 +62,7 @@ impl Cell {
     }
 }
 
-/// The cards in each cell, most urgent first.
+/// The cards in each cell, in the order asked for.
 pub struct Board {
     pub cells: BTreeMap<Cell, Vec<i64>>,
     /// Done cards left off for being done before the cutoff.
@@ -81,6 +81,7 @@ impl Board {
         tasks: &Tasks,
         derived: &Derived,
         leaves: bool,
+        sort: Sort,
         landings: &Seen,
         done: DoneSince,
     ) -> Board {
@@ -110,7 +111,7 @@ impl Board {
             cells.entry(cell).or_default().push(id);
         }
         for ids in cells.values_mut() {
-            ids.sort_by_key(|&id| derived::urgency(tasks, derived, id));
+            sort.order(tasks, derived, ids);
         }
         Board { cells, older_done }
     }

@@ -128,7 +128,7 @@ nHcx  p0  todo         -  a?   Unrated
 FTFE  p1  todo         8  a2   Big
 qxpj  p2  todo         2  a7   Small
 $ ergon ls --sort title
-error: can't sort by "title": expected priority, attention, size, created or updated
+error: can't sort by "title": expected priority, attention, size, blocks, created or updated
 [exit 1]
 $ ergon ls --sort size up
 error: invalid sort order "up": expected asc or desc

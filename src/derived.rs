@@ -408,10 +408,11 @@ pub enum SortField {
     Size,
     Created,
     Updated,
+    Blocks,
 }
 
 impl Sort {
-    pub const FIELDS: &str = "priority, attention, size, created or updated";
+    pub const FIELDS: &str = "priority, attention, size, blocks, created or updated";
 
     pub fn parse(field: &str, order: Option<&str>) -> Result<Sort> {
         let field = match field {
@@ -420,6 +421,7 @@ impl Sort {
             "size" => SortField::Size,
             "created" => SortField::Created,
             "updated" => SortField::Updated,
+            "blocks" => SortField::Blocks,
             _ => bail!("can't sort by {field:?}: expected {}", Sort::FIELDS),
         };
         let descending = match order {
@@ -430,8 +432,22 @@ impl Sort {
         Ok(Sort { field, descending })
     }
 
-    fn key(self, tasks: &Tasks, derived: &Derived, id: i64) -> Option<i64> {
-        self.field.value(tasks, derived, id)
+    /// Puts `ids` in this order. Tasks without a value go last either way,
+    /// and ties go most urgent, then oldest.
+    pub fn order(self, tasks: &Tasks, derived: &Derived, ids: &mut [i64]) {
+        // Keys up front: blocks walks the dependency graph for each task.
+        let keys: HashMap<i64, Option<i64>> = ids
+            .iter()
+            .map(|&id| (id, self.field.value(tasks, derived, id)))
+            .collect();
+        ids.sort_by(|a, b| {
+            let by_field = match (keys[a], keys[b]) {
+                (Some(x), Some(y)) if self.descending => y.cmp(&x),
+                (Some(x), Some(y)) => x.cmp(&y),
+                (a, b) => b.is_some().cmp(&a.is_some()),
+            };
+            by_field.then_with(|| urgency(tasks, derived, *a).cmp(&urgency(tasks, derived, *b)))
+        });
     }
 }
 
@@ -446,6 +462,10 @@ impl SortField {
             SortField::Size => derived.size(id).map(|s| s.left as i64),
             SortField::Created => Some(t.created_at),
             SortField::Updated => Some(t.updated_at),
+            // In tenths, since a step's share can leave a fraction.
+            SortField::Blocks => Some(
+                blocking(tasks, derived, id).map_or(0, |b| (b.left * 10.0).round() as i64),
+            ),
         }
     }
 }
@@ -520,15 +540,7 @@ pub fn ls(tasks: &Tasks, derived: &Derived, sort: Sort) -> Vec<i64> {
     for c in tasks.children(tasks.root().id) {
         visit(tasks, derived, c.id, &mut out);
     }
-    let fallback = |id: i64| urgency(tasks, derived, id);
-    out.sort_by(|&a, &b| {
-        let by_field = match (sort.key(tasks, derived, a), sort.key(tasks, derived, b)) {
-            (Some(x), Some(y)) if sort.descending => y.cmp(&x),
-            (Some(x), Some(y)) => x.cmp(&y),
-            (a, b) => b.is_some().cmp(&a.is_some()),
-        };
-        by_field.then_with(|| fallback(a).cmp(&fallback(b)))
-    });
+    sort.order(tasks, derived, &mut out);
     out
 }
 

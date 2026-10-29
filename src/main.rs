@@ -137,8 +137,12 @@ enum Command {
     /// `ergon ls` would list, found the same way across every status: a
     /// landing, done or blocked task is one card, and an open task splits
     /// into its subtasks only where blocked work is under it. Cancelled
-    /// tasks don't show, nor do done ones older than --done.
+    /// tasks don't show, nor do done ones older than --done. Each cell is
+    /// ordered as `ergon ls --sort` orders its rows.
     Kanban {
+        /// A field, then optionally asc or desc: `--sort blocks desc`.
+        #[arg(long, num_args = 1..=2, value_names = ["FIELD", "ORDER"])]
+        sort: Option<Vec<String>>,
         /// Show every task with no subtasks instead.
         #[arg(long)]
         leaves: bool,
@@ -148,9 +152,10 @@ enum Command {
     },
     /// List the coarsest open, unblocked work, most urgent first
     ///
-    /// --sort orders by priority, attention, size (what's left), created or
-    /// updated instead, ascending unless followed by desc. Tasks without a
-    /// value go last either way, and ties stay most urgent, then oldest.
+    /// --sort orders by priority, attention, size (what's left), blocks (the
+    /// size of open work waiting on it), created or updated instead,
+    /// ascending unless followed by desc. Tasks without a value go last
+    /// either way, and ties stay most urgent, then oldest.
     Ls {
         /// A field, then optionally asc or desc: `--sort attention desc`.
         #[arg(long, num_args = 1..=2, value_names = ["FIELD", "ORDER"])]
@@ -347,6 +352,17 @@ fn parse_size_or_none(s: &str) -> Result<OrNone<u32>, String> {
 
 fn parse_attention(s: &str) -> Result<u8, String> {
     task::parse_attention(s).map_err(|e| e.to_string())
+}
+
+/// `--sort FIELD [ORDER]`, for `ls` and `kanban`.
+fn parse_sort(sort: Option<Vec<String>>) -> Result<ergon::derived::Sort> {
+    match sort.as_deref() {
+        None => Ok(Default::default()),
+        Some([field, order @ ..]) => {
+            ergon::derived::Sort::parse(field, order.first().map(String::as_str))
+        }
+        Some([]) => unreachable!("clap requires a field"),
+    }
 }
 
 /// `kanban --done`: how many days back done tasks show; `None` for all.
@@ -591,7 +607,8 @@ fn run(cli: Cli) -> Result<()> {
                 view::gantt(&tasks, &schedule, id, length, mark.as_ref(), columns())
             );
         }
-        Command::Kanban { leaves, done } => {
+        Command::Kanban { sort, leaves, done } => {
+            let sort = parse_sort(sort)?;
             let p = project_for(&conn, &[])?;
             finish_merged(&mut conn, &p, &cwd)?;
             let tasks = Tasks::load(&conn, &p)?;
@@ -608,7 +625,7 @@ fn run(cli: Cli) -> Result<()> {
                 since: done.0.map(|d| ergon::now() - i64::from(d) * 86_400),
                 done_at: &done_at,
             };
-            let board = kanban::Board::compute(&tasks, &derived, leaves, &seen, done);
+            let board = kanban::Board::compute(&tasks, &derived, leaves, sort, &seen, done);
             print!("{}", view::kanban(&tasks, &derived, &board, columns()));
         }
         Command::Ls {
@@ -622,13 +639,7 @@ fn run(cli: Cli) -> Result<()> {
             status,
             intent,
         } => {
-            let sort = match sort.as_deref() {
-                None => Default::default(),
-                Some([field, order @ ..]) => {
-                    ergon::derived::Sort::parse(field, order.first().map(String::as_str))?
-                }
-                Some([]) => unreachable!("clap requires a field"),
-            };
+            let sort = parse_sort(sort)?;
             let nest = match (groups, ancestors) {
                 (true, _) => view::Nest::Groups,
                 (_, true) => view::Nest::Ancestors,
