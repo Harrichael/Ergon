@@ -160,7 +160,8 @@ fn visit_leaves(tasks: &Tasks, id: i64, out: &mut Vec<i64>) {
 
 /// A task landing in several sets sits where the one that most needs its
 /// author is: a reply due, then a draft to finish, then work still queued,
-/// then review awaited; approved only once all its sets are.
+/// then review awaited; approved only once all its sets are. An approval
+/// outranks comments left unanswered: the reviewer is done, so they're nits.
 fn landing_cell(sets: Option<Vec<&Landing>>) -> Cell {
     let rank = |c: &Cell| match c {
         Cell::Unanswered => 0,
@@ -174,9 +175,9 @@ fn landing_cell(sets: Option<Vec<&Landing>>) -> Cell {
         .filter(|l| l.is_open())
         .map(|l| match (l.state.as_str(), l.review) {
             ("queued", _) => Cell::MergeQueue,
+            (_, Some(r)) if r.approved && !r.draft => Cell::Approved,
             (_, Some(r)) if r.unanswered => Cell::Unanswered,
             (_, Some(r)) if r.draft => Cell::Draft,
-            (_, Some(r)) if r.approved => Cell::Approved,
             _ => Cell::Waiting,
         })
         .min_by_key(rank)

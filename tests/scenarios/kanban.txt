@@ -42,8 +42,9 @@ $ ERGON_NOW=1750000000 ergon edit Hwgf --status done
 
 # Docs waits on Search, so Payments splits as ls splits it. Billing has one
 # set in the queue and one with a reply due: the reply wins. Export's PR is
-# a draft, Import's waits on reviewers, Invoices is approved, and no set
-# carries Reports. Legacy was done months ago, so only Audit shows.
+# a draft, Import's waits on reviewers, Invoices is approved (its last
+# comment unanswered, but approval wins), and no set carries Reports.
+# Legacy was done months ago, so only Audit shows.
 $ fake-choros <<EOF
 {
   "queues": [
@@ -62,7 +63,7 @@ $ fake-choros <<EOF
          "review": {"draft": false, "unanswered": false},
          "sessions": [], "labels": ["demo/qwpT"]},
         {"n": 5, "repo": "app", "state": "front", "pr": {"number": 15, "url": "u"},
-         "review": {"draft": false, "unanswered": false, "approved": true},
+         "review": {"draft": false, "unanswered": true, "approved": true},
          "sessions": [], "labels": ["demo/bfLH"]}
       ]
     }
