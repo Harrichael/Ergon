@@ -33,6 +33,14 @@ $ ergon tree qxpj --ls
 ▸   FTFE  todo         p2  First
     nHcx  todo         p2  Second  blocked
 
+# Given a task, ls lists only the work at or under it: here what Parent
+# splits into. A task ls would list anyway lists itself; a blocked one, nothing.
+$ ergon ls qxpj
+FTFE  p2  todo         First  (in: Parent)
+$ ergon ls FTFE
+FTFE  p2  todo         First  (in: Parent)
+$ ergon ls nHcx
+
 # Before Second was blocked, Parent was listed whole; --subtasks shows what's
 # under each row.
 $ ergon dep rm nHcx pQyk

@@ -628,14 +628,21 @@ fn ruler(total: u64, area: u64, cell: impl Fn(u64) -> usize) -> String {
 
 /// `ergon ls`: one row per task ready to start that `filter` keeps, laid out
 /// as `layout` says.
-pub fn ls(tasks: &Tasks, derived: &Derived, sort: Sort, filter: &Filter, layout: Layout) -> String {
+pub fn ls(
+    tasks: &Tasks,
+    derived: &Derived,
+    from: i64,
+    sort: Sort,
+    filter: &Filter,
+    layout: Layout,
+) -> String {
     let Layout {
         subtasks,
         nest,
         intent,
         columns,
     } = layout;
-    let mut ids = derived::ls(tasks, derived, sort);
+    let mut ids = derived::ls(tasks, derived, from, sort);
     ids.retain(|&id| filter.keeps(tasks, derived, id));
     let shown = |id: i64| {
         let below = if subtasks {
@@ -845,7 +852,7 @@ fn wrap(line: &str, width: usize) -> Vec<String> {
 
 /// The rows of `ergon ls`, each with its task, without line breaks.
 pub fn ls_rows(tasks: &Tasks, derived: &Derived, sort: Sort) -> Vec<(i64, String)> {
-    let ids = derived::ls(tasks, derived, sort);
+    let ids = derived::ls(tasks, derived, tasks.root().id, sort);
     let width = derived
         .sized()
         .then(|| size_width(derived, ids.iter().copied()));

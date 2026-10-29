@@ -156,7 +156,11 @@ enum Command {
     /// size of open work waiting on it), created or updated instead,
     /// ascending unless followed by desc. Tasks without a value go last
     /// either way, and ties stay most urgent, then oldest.
+    ///
+    /// Given a task, only the work at or under it: the task itself if it's
+    /// what ls would list, else what it splits into.
     Ls {
+        task: Option<TaskRef>,
         /// A field, then optionally asc or desc: `--sort attention desc`.
         #[arg(long, num_args = 1..=2, value_names = ["FIELD", "ORDER"])]
         sort: Option<Vec<String>>,
@@ -598,7 +602,7 @@ fn run(cli: Cli) -> Result<()> {
             let derived = Derived::compute(&tasks);
             let schedule = gantt::Schedule::compute(&tasks, &derived, length);
             let mark = ls.then(|| {
-                ergon::derived::ls(&tasks, &derived, Default::default())
+                ergon::derived::ls(&tasks, &derived, tasks.root().id, Default::default())
                     .into_iter()
                     .collect::<std::collections::HashSet<_>>()
             });
@@ -629,6 +633,7 @@ fn run(cli: Cli) -> Result<()> {
             print!("{}", view::kanban(&tasks, &derived, &board, columns()));
         }
         Command::Ls {
+            task,
             sort,
             subtasks,
             groups,
@@ -656,14 +661,19 @@ fn run(cli: Cli) -> Result<()> {
                 .collect(),
                 statuses: status.map(|s| s.0),
             };
-            let p = project_for(&conn, &[])?;
+            let p = project_for(&conn, &task.iter().collect::<Vec<_>>())?;
             finish_merged(&mut conn, &p, &cwd)?;
             let tasks = Tasks::load(&conn, &p)?;
+            let from = match &task {
+                Some(t) => tasks.live(&t.slug)?.id,
+                None => tasks.root().id,
+            };
             print!(
                 "{}",
                 view::ls(
                     &tasks,
                     &Derived::compute(&tasks),
+                    from,
                     sort,
                     &filter,
                     view::Layout {
@@ -856,7 +866,7 @@ fn tree(conn: &Connection, p: &Project, task: Option<&TaskRef>, ls: bool) -> Res
     };
     let derived = Derived::compute(&tasks);
     let mark = ls.then(|| {
-        ergon::derived::ls(&tasks, &derived, Default::default())
+        ergon::derived::ls(&tasks, &derived, tasks.root().id, Default::default())
             .into_iter()
             .collect::<std::collections::HashSet<_>>()
     });

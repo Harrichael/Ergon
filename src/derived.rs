@@ -534,11 +534,16 @@ impl Filter {
     }
 }
 
-/// The coarsest open, unblocked work, in `sort` order.
-pub fn ls(tasks: &Tasks, derived: &Derived, sort: Sort) -> Vec<i64> {
+/// The coarsest open, unblocked work at or under `from`, in `sort` order.
+/// The root is never listed itself: it would be the coarsest of all.
+pub fn ls(tasks: &Tasks, derived: &Derived, from: i64, sort: Sort) -> Vec<i64> {
     let mut out = Vec::new();
-    for c in tasks.children(tasks.root().id) {
-        visit(tasks, derived, c.id, &mut out);
+    if from == tasks.root().id {
+        for c in tasks.children(from) {
+            visit(tasks, derived, c.id, &mut out);
+        }
+    } else {
+        visit(tasks, derived, from, &mut out);
     }
     sort.order(tasks, derived, &mut out);
     out
@@ -667,7 +672,7 @@ mod tests {
 
         fn ls(&self) -> Vec<String> {
             let (tasks, d) = self.eval();
-            ls(&tasks, &d, Sort::default())
+            ls(&tasks, &d, tasks.root().id, Sort::default())
                 .into_iter()
                 .map(|id| tasks.get(id).slug.clone())
                 .collect()
