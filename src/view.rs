@@ -147,6 +147,15 @@ pub fn show(
         let refs: Vec<String> = waiting_on.iter().map(|&d| tasks.reference(d)).collect();
         let _ = writeln!(out, "blocked:   yes, waiting on {}", refs.join(", "));
     }
+    if let Some(b) = derived::blocking(tasks, derived, id) {
+        let refs: Vec<String> = b.tasks.iter().map(|&w| tasks.reference(w)).collect();
+        let left = if derived.sized() {
+            format!(" ({} left)", blocked_size(&b))
+        } else {
+            String::new()
+        };
+        let _ = writeln!(out, "blocks:    {}{left}", refs.join(", "));
+    }
 
     if let Some(p) = t.parent_id {
         let _ = writeln!(
@@ -469,9 +478,34 @@ pub fn gantt(
     out
 }
 
+fn blocked_size(b: &derived::Blocking) -> String {
+    // Shares of a size can leave a fraction.
+    let n = (b.left * 10.0).round() / 10.0;
+    format!("{n}{}", if b.partial { "+" } else { "" })
+}
+
+/// A card's size, attention and the work waiting on it, as far as known.
+fn card_facts(tasks: &Tasks, derived: &Derived, id: i64) -> Option<String> {
+    let blocks = derived::blocking(tasks, derived, id).map(|b| match derived.sized() {
+        true => format!("blocks {}", blocked_size(&b)),
+        false if b.tasks.len() == 1 => "blocks 1 task".to_string(),
+        false => format!("blocks {} tasks", b.tasks.len()),
+    });
+    let facts: Vec<String> = [
+        derived.size(id).map(|s| s.label()),
+        derived.attention(id).map(|a| format!("a{a}")),
+        blocks,
+    ]
+    .into_iter()
+    .flatten()
+    .collect();
+    (!facts.is_empty()).then(|| facts.join(" · "))
+}
+
 /// `ergon kanban`: a column per status, side by side, each card its slug
-/// and title, wrapped to fit.
-pub fn kanban(tasks: &Tasks, board: &Board, columns: Option<usize>) -> String {
+/// and title, wrapped to fit, then its size, attention and the size of the
+/// work waiting on it.
+pub fn kanban(tasks: &Tasks, derived: &Derived, board: &Board, columns: Option<usize>) -> String {
     const GAP: usize = 2;
     let statuses = [Status::Todo, Status::InProgress, Status::Landing, Status::Done];
     let total = columns.unwrap_or(120);
@@ -505,8 +539,15 @@ pub fn kanban(tasks: &Tasks, board: &Board, columns: Option<usize>) -> String {
                 for &id in ids {
                     let t = tasks.get(id);
                     let card = format!("{} {}", t.slug, t.title());
-                    for part in wrap_hanging(&card, width, t.slug.chars().count() + 1) {
+                    let hang = t.slug.chars().count() + 1;
+                    for part in wrap_hanging(&card, width, hang) {
                         lines.push((part, Style::new()));
+                    }
+                    if let Some(facts) = card_facts(tasks, derived, id) {
+                        let hang = hang.min(width / 2);
+                        for part in wrap_hanging(&facts, width - hang, 0) {
+                            lines.push((" ".repeat(hang) + &part, DIM));
+                        }
                     }
                 }
             }

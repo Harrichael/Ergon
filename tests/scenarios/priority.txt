@@ -39,6 +39,7 @@ demo/pQyk  X
 status:    todo (inherited)
 priority:  p1 (boosted from stored p4)
 blocked:   no
+blocks:    demo/FTFE
 parent:    demo/nHcx  H
 created:   2025-10-09 08:53 (just now)
 updated:   2025-10-09 08:53 (just now)

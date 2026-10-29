@@ -609,7 +609,7 @@ fn run(cli: Cli) -> Result<()> {
                 done_at: &done_at,
             };
             let board = kanban::Board::compute(&tasks, &derived, leaves, &seen, done);
-            print!("{}", view::kanban(&tasks, &board, columns()));
+            print!("{}", view::kanban(&tasks, &derived, &board, columns()));
         }
         Command::Ls {
             sort,

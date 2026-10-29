@@ -1,0 +1,146 @@
+# A task blocks the open work that waits on it or on a task under it,
+# directly or through a chain of open work. ergon show names that work and
+# its size left; kanban cards carry it beside their own size and attention.
+
+$ ergon init demo Root --no-launch
+Created project demo in $ROOT
+$ ergon add Schema --size 3 --attention 4
+qxpj
+$ ergon add API --size 5
+FTFE
+$ ergon add Client
+nHcx
+$ ergon add Screens --parent nHcx --size 8
+pQyk
+$ ergon add Copy --parent nHcx
+9cDQ
+$ ergon add Billing --size 13
+dFR6
+$ ergon add Plan --parent dFR6
+qwpT
+$ ergon add Charge --parent dFR6
+AENA
+$ ergon add Old
+FubR
+
+# API waits on Schema, the Client on the API, and Billing's Charge step on
+# the Client: Schema holds all of it back. As in gantt, a step counts its
+# share of its sized task, and Copy has no size, so the total is a floor.
+$ ergon dep add FTFE qxpj
+$ ergon dep add nHcx FTFE
+$ ergon dep add AENA nHcx
+$ ergon show qxpj
+demo/qxpj  Schema
+status:    todo
+priority:  p-
+size:      3
+attention: 4
+blocked:   no
+blocks:    demo/FTFE, demo/nHcx, demo/AENA (19.5+ left)
+parent:    demo/root  Root
+created:   2025-10-09 08:53 (just now)
+updated:   2025-10-09 08:53 (just now)
+delete:    ergon rm demo/qxpj --subtasks 0 --dependents 1
+
+Schema
+
+Dependents:
+  - FTFE  todo         API
+
+$ ergon show FTFE
+demo/FTFE  API
+status:    todo
+priority:  p-
+size:      5
+attention: ? (unknown)
+blocked:   yes, waiting on demo/qxpj
+blocks:    demo/nHcx, demo/AENA (14.5+ left)
+parent:    demo/root  Root
+created:   2025-10-09 08:53 (just now)
+updated:   2025-10-09 08:53 (just now)
+delete:    ergon rm demo/FTFE --subtasks 0 --dependents 1
+
+API
+
+Depends on:
+  - qxpj  todo         Schema
+
+Dependents:
+  - nHcx  todo         Client
+
+# The Client can't finish without Screens, so what waits on the Client
+# waits on Screens too.
+$ ergon show pQyk
+demo/pQyk  Screens
+status:    todo (inherited)
+priority:  p-
+size:      8
+attention: ? (unknown)
+blocked:   yes, waiting on demo/FTFE
+blocks:    demo/AENA (6.5 left)
+parent:    demo/nHcx  Client
+created:   2025-10-09 08:53 (just now)
+updated:   2025-10-09 08:53 (just now)
+delete:    ergon rm demo/pQyk --subtasks 0 --dependents 0
+
+Screens
+
+# Finished work holds nothing back, so neither does Old, and Billing,
+# waiting only through it, isn't counted.
+$ ergon dep add FubR qxpj
+$ ergon dep add dFR6 FubR
+$ ergon edit FubR --status done
+$ ergon dep rm AENA nHcx
+$ ergon show qxpj
+demo/qxpj  Schema
+status:    todo
+priority:  p-
+size:      3
+attention: 4
+blocked:   no
+blocks:    demo/FTFE, demo/nHcx (13+ left)
+parent:    demo/root  Root
+created:   2025-10-09 08:53 (just now)
+updated:   2025-10-09 08:53 (just now)
+delete:    ergon rm demo/qxpj --subtasks 0 --dependents 2
+
+Schema
+
+Dependents:
+  - FTFE  todo         API
+  - FubR  done         Old
+
+$ COLUMNS=120 ergon kanban
+todo (4)                      in_progress (0)               landing (0)                   done (1)
+────────────────────────────  ────────────────────────────  ────────────────────────────  ────────────────────────────
+ready (2)                                                                                 FubR Old
+qxpj Schema
+     3 · a4 · blocks 13+
+dFR6 Billing
+     13
+blocked (2)
+FTFE API
+     5 · blocks 8+
+nHcx Client
+     8+
+
+# A step holds back the steps of its own sized task that wait on it, by
+# their share.
+$ ergon dep add AENA qwpT
+$ ergon show qwpT
+demo/qwpT  Plan
+status:    todo (inherited)
+priority:  p-
+size:      - (a step of demo/dFR6)
+attention: ? (unknown)
+blocked:   no
+blocks:    demo/AENA (6.5 left)
+parent:    demo/dFR6  Billing
+created:   2025-10-09 08:53 (just now)
+updated:   2025-10-09 08:53 (just now)
+delete:    ergon rm demo/qwpT --subtasks 0 --dependents 1
+
+Plan
+
+Dependents:
+  - AENA  todo         Charge

@@ -73,7 +73,7 @@ $ COLUMNS=108 ergon kanban
 todo (2)                   in_progress (1)            landing (5)                done (1 of 2)
 ─────────────────────────  ─────────────────────────  ─────────────────────────  ─────────────────────────
 ready (1)                  pQyk Search                PR draft (1)               FubR Audit
-FTFE API                                              dFR6 Export
+FTFE API                        blocks 1 task         dFR6 Export
 blocked (1)                                           waiting for comments (1)
 nHcx Docs                                             qwpT Import
                                                       unresponded comments (1)
@@ -86,7 +86,7 @@ $ COLUMNS=108 ergon kanban --done all
 todo (2)                   in_progress (1)            landing (5)                done (2)
 ─────────────────────────  ─────────────────────────  ─────────────────────────  ─────────────────────────
 ready (1)                  pQyk Search                PR draft (1)               FubR Audit
-FTFE API                                              dFR6 Export                Hwgf Legacy
+FTFE API                        blocks 1 task         dFR6 Export                Hwgf Legacy
 blocked (1)                                           waiting for comments (1)
 nHcx Docs                                             qwpT Import
                                                       unresponded comments (1)

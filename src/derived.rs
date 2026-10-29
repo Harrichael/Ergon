@@ -291,6 +291,79 @@ fn compute_base(
     }
 }
 
+/// The open work waiting on a task, on a task under it, or on a task above
+/// it (which can't finish without it), directly or through other open work.
+pub struct Blocking {
+    /// The coarsest of the waiting tasks, most urgent first.
+    pub tasks: Vec<i64>,
+    /// The size left of the waiting work. As in `gantt`, a waiting step
+    /// counts its share of its sized task, split evenly among its steps.
+    pub left: f64,
+    /// Some of the waiting work has no size, so `left` is a floor.
+    pub partial: bool,
+}
+
+/// `None` when nothing open waits on `id`. Landing and closed work holds
+/// nothing back, as for `blocked`, so neither it nor what waits on it
+/// through it counts.
+pub fn blocking(tasks: &Tasks, derived: &Derived, id: i64) -> Option<Blocking> {
+    let open = |t: i64| tasks.effective_status(t).is_open();
+    if !open(id) {
+        return None;
+    }
+    let above = tasks.ancestors(id);
+    let own: HashSet<i64> = std::iter::once(id)
+        .chain(tasks.descendants(id))
+        .filter(|&t| open(t))
+        .collect();
+    let edges = waiters(tasks);
+    let mut waiting: HashSet<i64> = HashSet::new();
+    let mut queue: VecDeque<i64> = own.iter().chain(&above).copied().collect();
+    while let Some(n) = queue.pop_front() {
+        for &w in edges.get(&n).into_iter().flatten() {
+            if !own.contains(&w) && !above.contains(&w) && open(w) && waiting.insert(w) {
+                queue.push_back(w);
+            }
+        }
+    }
+    if waiting.is_empty() {
+        return None;
+    }
+
+    let mut left = 0.0;
+    let mut partial = false;
+    for &w in &waiting {
+        let sized = std::iter::once(w)
+            .chain(tasks.ancestors(w))
+            .find(|&t| tasks.get(t).size.is_some());
+        match sized {
+            Some(u) if u == w => left += derived.size(u).map_or(0, |s| s.left) as f64,
+            // Counted whole, as waiting itself.
+            Some(u) if waiting.contains(&u) => {}
+            Some(u) => {
+                let steps = steps(tasks, u);
+                if steps.contains(&w) {
+                    left += f64::from(tasks.get(u).size.unwrap()) / steps.len() as f64;
+                }
+            }
+            None if !tasks.children(w).any(|c| open(c.id)) => partial = true,
+            None => {}
+        }
+    }
+
+    let mut coarsest: Vec<i64> = waiting
+        .iter()
+        .copied()
+        .filter(|&w| !tasks.ancestors(w).iter().any(|a| waiting.contains(a)))
+        .collect();
+    coarsest.sort_by_key(|&w| urgency(tasks, derived, w));
+    Some(Blocking {
+        tasks: coarsest,
+        left,
+        partial,
+    })
+}
+
 /// For each task, the tasks that directly wait on it: those that depend on
 /// it, and their subtasks (which inherit the block).
 fn waiters(tasks: &Tasks) -> HashMap<i64, Vec<i64>> {

@@ -37,6 +37,7 @@ demo/nHcx  B
 status:    todo
 priority:  p-
 blocked:   no
+blocks:    demo/qxpj
 parent:    demo/root  Root
 created:   2025-10-09 08:53 (just now)
 updated:   2025-10-09 08:53 (just now)
