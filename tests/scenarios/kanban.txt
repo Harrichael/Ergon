@@ -1,0 +1,150 @@
+# ergon kanban lays the project out as a board: a column per status, with
+# todo split into ready and blocked, and landing split by how far each
+# task's PRs have got.
+
+$ cd ws
+$ ergon init demo "Build a demo" --no-launch
+Created project demo in $ROOT/ws
+$ ergon add Payments
+qxpj
+$ ergon add API --parent qxpj
+FTFE
+$ ergon add Docs --parent qxpj
+nHcx
+$ ergon add Search
+pQyk
+$ ergon add Billing
+9cDQ
+$ ergon add Export
+dFR6
+$ ergon add Import
+qwpT
+$ ergon add Reports
+AENA
+$ ergon add Audit
+FubR
+$ ergon add Archive
+LuM4
+$ ergon add Invoices
+bfLH
+$ ergon add Legacy
+Hwgf
+$ ergon dep add nHcx pQyk
+$ ergon edit pQyk --status in_progress
+$ ergon edit 9cDQ --status landing
+$ ergon edit dFR6 --status landing
+$ ergon edit qwpT --status landing
+$ ergon edit AENA --status landing
+$ ergon edit FubR --status done
+$ ergon edit LuM4 --status cancelled
+$ ergon edit bfLH --status landing
+$ ERGON_NOW=1750000000 ergon edit Hwgf --status done
+
+# Docs waits on Search, so Payments splits as ls splits it. Billing has one
+# set in the queue and one with a reply due: the reply wins. Export's PR is
+# a draft, Import's waits on reviewers, Invoices is approved, and no set
+# carries Reports. Legacy was done months ago, so only Audit shows.
+$ fake-choros <<EOF
+{
+  "queues": [
+    {
+      "name": "appq",
+      "sets": [
+        {"n": 1, "repo": "app", "state": "queued", "pr": null,
+         "sessions": [], "labels": ["demo/9cDQ"]},
+        {"n": 2, "repo": "app", "state": "front", "pr": {"number": 12, "url": "u"},
+         "review": {"draft": false, "unanswered": true},
+         "sessions": [], "labels": ["demo/9cDQ"]},
+        {"n": 3, "repo": "app", "state": "front", "pr": {"number": 13, "url": "u"},
+         "review": {"draft": true, "unanswered": false},
+         "sessions": [], "labels": ["demo/dFR6"]},
+        {"n": 4, "repo": "app", "state": "front", "pr": {"number": 14, "url": "u"},
+         "review": {"draft": false, "unanswered": false},
+         "sessions": [], "labels": ["demo/qwpT"]},
+        {"n": 5, "repo": "app", "state": "front", "pr": {"number": 15, "url": "u"},
+         "review": {"draft": false, "unanswered": false, "approved": true},
+         "sessions": [], "labels": ["demo/bfLH"]}
+      ]
+    }
+  ]
+}
+EOF
+$ COLUMNS=108 ergon kanban
+todo (2)                   in_progress (1)            landing (5)                done (1 of 2)
+─────────────────────────  ─────────────────────────  ─────────────────────────  ─────────────────────────
+ready (1)                  pQyk Search                PR draft (1)               FubR Audit
+FTFE API                                              dFR6 Export
+blocked (1)                                           waiting for comments (1)
+nHcx Docs                                             qwpT Import
+                                                      unresponded comments (1)
+                                                      9cDQ Billing
+                                                      approved (1)
+                                                      bfLH Invoices
+                                                      no open landing (1)
+                                                      AENA Reports
+$ COLUMNS=108 ergon kanban --done all
+todo (2)                   in_progress (1)            landing (5)                done (2)
+─────────────────────────  ─────────────────────────  ─────────────────────────  ─────────────────────────
+ready (1)                  pQyk Search                PR draft (1)               FubR Audit
+FTFE API                                              dFR6 Export                Hwgf Legacy
+blocked (1)                                           waiting for comments (1)
+nHcx Docs                                             qwpT Import
+                                                      unresponded comments (1)
+                                                      9cDQ Billing
+                                                      approved (1)
+                                                      bfLH Invoices
+                                                      no open landing (1)
+                                                      AENA Reports
+
+# With Docs no longer waiting, Payments is one card again; --leaves shows
+# every task with no subtasks instead. Long titles wrap under the slug.
+$ ergon dep rm nHcx pQyk
+$ ergon edit FTFE --intent "API for charging cards and refunding them"
+$ COLUMNS=72 ergon kanban
+todo (1)          in_progress (1)   landing (5)       done (1 of 2)
+────────────────  ────────────────  ────────────────  ────────────────
+ready (1)         pQyk Search       PR draft (1)      FubR Audit
+qxpj Payments                       dFR6 Export
+                                    waiting for com…
+                                    qwpT Import
+                                    unresponded com…
+                                    9cDQ Billing
+                                    approved (1)
+                                    bfLH Invoices
+                                    no open landing…
+                                    AENA Reports
+$ COLUMNS=72 ergon kanban --leaves
+todo (2)          in_progress (1)   landing (5)       done (1 of 2)
+────────────────  ────────────────  ────────────────  ────────────────
+ready (2)         pQyk Search       PR draft (1)      FubR Audit
+FTFE API for                        dFR6 Export
+     charging                       waiting for com…
+     cards and                      qwpT Import
+     refunding                      unresponded com…
+     them                           9cDQ Billing
+nHcx Docs                           approved (1)
+                                    bfLH Invoices
+                                    no open landing…
+                                    AENA Reports
+
+# Once API is landing, Payments splits so API shows with the other landing
+# work.
+$ ergon edit FTFE --status landing
+$ COLUMNS=72 ergon kanban
+todo (1)          in_progress (1)   landing (6)       done (1 of 2)
+────────────────  ────────────────  ────────────────  ────────────────
+ready (1)         pQyk Search       PR draft (1)      FubR Audit
+nHcx Docs                           dFR6 Export
+                                    waiting for com…
+                                    qwpT Import
+                                    unresponded com…
+                                    9cDQ Billing
+                                    approved (1)
+                                    bfLH Invoices
+                                    no open landing…
+                                    FTFE API for
+                                         charging
+                                         cards and
+                                         refunding
+                                         them
+                                    AENA Reports

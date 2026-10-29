@@ -36,6 +36,8 @@ struct Set {
     repo: String,
     state: String,
     pr: Option<Pr>,
+    #[serde(default)]
+    review: Option<Review>,
     sessions: Vec<SessionFork>,
     labels: Vec<String>,
 }
@@ -54,6 +56,16 @@ struct Pr {
     number: u64,
 }
 
+/// Where a front set's PR review stands, as of choros's last pass.
+#[derive(Clone, Copy, Deserialize)]
+pub struct Review {
+    pub draft: bool,
+    /// Someone besides the PR's author spoke after the author last did.
+    pub unanswered: bool,
+    #[serde(default)]
+    pub approved: bool,
+}
+
 #[derive(Deserialize)]
 struct SessionFork {
     source: String,
@@ -64,6 +76,7 @@ pub struct Landing {
     pub repo: String,
     pub state: String,
     pub pr: Option<u64>,
+    pub review: Option<Review>,
     sessions: Vec<String>,
     labels: Vec<TaskRef>,
 }
@@ -134,6 +147,7 @@ pub fn read(dir: &Path) -> Result<Option<Vec<Landing>>> {
             repo: s.repo,
             state: s.state,
             pr: s.pr.map(|p| p.number),
+            review: s.review,
             sessions: s.sessions.into_iter().map(|f| f.source).collect(),
             labels: task_refs(&s.labels),
         })
@@ -143,6 +157,7 @@ pub fn read(dir: &Path) -> Result<Option<Vec<Landing>>> {
         repo: i.repo,
         state: "merged".into(),
         pr: i.pr,
+        review: None,
         sessions: i.sessions,
         labels: task_refs(&i.labels),
     });
@@ -206,10 +221,65 @@ pub fn tasks_of<'a>(landing: &Landing, projects: &'a [Tasks]) -> Vec<(&'a Tasks,
         .collect()
 }
 
+/// What choros reports in the folders a set of tasks were worked in.
+pub struct Seen<'a> {
+    tasks: &'a Tasks,
+    fallback: &'a Path,
+    /// Unreadable folders, like ones outside any trunk, hold `None`.
+    read: HashMap<&'a Path, Option<Vec<Landing>>>,
+}
+
+impl<'a> Seen<'a> {
+    /// Reads every folder the subtrees of `ids` were worked in (`fallback`
+    /// for tasks without one), each once.
+    pub fn read(tasks: &'a Tasks, ids: &[i64], fallback: &'a Path) -> Seen<'a> {
+        let mut seen = Seen {
+            tasks,
+            fallback,
+            read: HashMap::new(),
+        };
+        for &id in ids {
+            for d in seen.dirs(&seen.subtree(id)) {
+                seen.read.entry(d).or_insert_with(|| read(d).ok().flatten());
+            }
+        }
+        seen
+    }
+
+    /// The landings that carry `id` or a task under it, read from the
+    /// folders of that subtree. `None` when one of them couldn't be read,
+    /// or `id` wasn't among those `read` was given.
+    pub fn of(&self, id: i64) -> Option<Vec<&Landing>> {
+        let ids = self.subtree(id);
+        let sets = self
+            .dirs(&ids)
+            .into_iter()
+            .map(|d| self.read.get(d)?.as_ref())
+            .collect::<Option<Vec<_>>>()?;
+        Some(
+            sets.into_iter()
+                .flatten()
+                .filter(|l| ids.iter().any(|&t| l.carries(self.tasks, t)))
+                .collect(),
+        )
+    }
+
+    fn subtree(&self, id: i64) -> Vec<i64> {
+        std::iter::once(id)
+            .chain(self.tasks.descendants(id))
+            .collect()
+    }
+
+    fn dirs(&self, ids: &[i64]) -> BTreeSet<&'a Path> {
+        ids.iter()
+            .map(|&t| dir_for(self.tasks, t).unwrap_or(self.fallback))
+            .collect()
+    }
+}
+
 /// The landing tasks whose landings have all merged, with the landing tasks
 /// under them, deepest first so no task is done before its subtasks. A
-/// task's landings are those that carry it or a task under it, read from
-/// the session folders of that subtree (`fallback` for tasks without one).
+/// task's landings are those that carry it or a task under it.
 /// A task no landing carries stays landing: nothing says its work went anywhere.
 pub fn merged(tasks: &Tasks, fallback: &Path) -> Vec<i64> {
     let landing: Vec<i64> = tasks
@@ -218,40 +288,16 @@ pub fn merged(tasks: &Tasks, fallback: &Path) -> Vec<i64> {
         .filter(|t| !t.is_deleted() && t.status == Some(task::Status::Landing))
         .map(|t| t.id)
         .collect();
-    let subtree =
-        |id: i64| -> Vec<i64> { std::iter::once(id).chain(tasks.descendants(id)).collect() };
-    let dirs_of = |ids: &[i64]| -> BTreeSet<&Path> {
-        ids.iter()
-            .map(|&t| dir_for(tasks, t).unwrap_or(fallback))
-            .collect()
-    };
-
-    // Unreadable folders, like ones outside any trunk, judge nothing.
-    let mut read_in: HashMap<&Path, Option<Vec<Landing>>> = HashMap::new();
-    for &id in &landing {
-        for d in dirs_of(&subtree(id)) {
-            read_in.entry(d).or_insert_with(|| read(d).ok().flatten());
-        }
-    }
-
+    let seen = Seen::read(tasks, &landing, fallback);
     let mut done = BTreeSet::new();
     for &id in &landing {
-        let ids = subtree(id);
-        let Some(sets) = dirs_of(&ids)
-            .into_iter()
-            .map(|d| read_in[d].as_ref())
-            .collect::<Option<Vec<_>>>()
-        else {
+        let Some(carrying) = seen.of(id) else {
             continue;
         };
-        let carrying: Vec<&Landing> = sets
-            .into_iter()
-            .flatten()
-            .filter(|l| ids.iter().any(|&t| l.carries(tasks, t)))
-            .collect();
         if !carrying.is_empty() && carrying.iter().all(|l| l.state == "merged") {
             done.extend(
-                ids.into_iter()
+                std::iter::once(id)
+                    .chain(tasks.descendants(id))
                     .filter(|&t| tasks.get(t).status == Some(task::Status::Landing)),
             );
         }

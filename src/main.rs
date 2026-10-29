@@ -9,7 +9,7 @@ use ergon::refs::{self, TaskRef, TaskRefs};
 use ergon::task::{self, Status, Tasks};
 
 use ergon::derived::{Derived, Filter, Range, SortField};
-use ergon::{claude, db, export, fmt, gantt, landings, outline, picker, view};
+use ergon::{claude, db, export, fmt, gantt, kanban, landings, outline, picker, view};
 use std::io::Read;
 
 /// Minimal task tracker for dispatching work to Claude Code sessions.
@@ -126,6 +126,25 @@ enum Command {
         /// Mark the work `ergon ls` would list.
         #[arg(long)]
         ls: bool,
+    },
+    /// Show the project as a board, a column per status
+    ///
+    /// Todo splits into ready and blocked. Landing splits by how far each
+    /// task's landings have got, as choros reports them: in the merge
+    /// queue, a draft PR, a PR waiting for comments, or one with comments
+    /// its author hasn't answered. A task with several sets sits where a
+    /// reply is due, else a draft, else the queue. The cards are what
+    /// `ergon ls` would list, found the same way across every status: a
+    /// landing, done or blocked task is one card, and an open task splits
+    /// into its subtasks only where blocked work is under it. Cancelled
+    /// tasks don't show, nor do done ones older than --done.
+    Kanban {
+        /// Show every task with no subtasks instead.
+        #[arg(long)]
+        leaves: bool,
+        /// Show tasks done in the last DAYS days, or `all`.
+        #[arg(long, value_name = "DAYS|all", default_value = "14", value_parser = parse_done_days)]
+        done: DoneDays,
     },
     /// List the coarsest open, unblocked work, most urgent first
     ///
@@ -328,6 +347,19 @@ fn parse_size_or_none(s: &str) -> Result<OrNone<u32>, String> {
 
 fn parse_attention(s: &str) -> Result<u8, String> {
     task::parse_attention(s).map_err(|e| e.to_string())
+}
+
+/// `kanban --done`: how many days back done tasks show; `None` for all.
+#[derive(Clone)]
+struct DoneDays(Option<u32>);
+
+fn parse_done_days(s: &str) -> Result<DoneDays, String> {
+    if s == "all" {
+        return Ok(DoneDays(None));
+    }
+    s.parse()
+        .map(|d| DoneDays(Some(d)))
+        .map_err(|_| format!("expected a number of days or `all`, not {s:?}"))
 }
 
 /// `ls --status`: open statuses only, since `ls` lists nothing else.
@@ -558,6 +590,26 @@ fn run(cli: Cli) -> Result<()> {
                 "{}",
                 view::gantt(&tasks, &schedule, id, length, mark.as_ref(), columns())
             );
+        }
+        Command::Kanban { leaves, done } => {
+            let p = project_for(&conn, &[])?;
+            finish_merged(&mut conn, &p, &cwd)?;
+            let tasks = Tasks::load(&conn, &p)?;
+            let derived = Derived::compute(&tasks);
+            let landing: Vec<i64> = tasks
+                .all()
+                .into_iter()
+                .filter(|t| !t.is_deleted() && tasks.effective_status(t.id) == Status::Landing)
+                .map(|t| t.id)
+                .collect();
+            let seen = landings::Seen::read(&tasks, &landing, &cwd);
+            let done_at = task::done_at(&conn, &p)?;
+            let done = kanban::DoneSince {
+                since: done.0.map(|d| ergon::now() - i64::from(d) * 86_400),
+                done_at: &done_at,
+            };
+            let board = kanban::Board::compute(&tasks, &derived, leaves, &seen, done);
+            print!("{}", view::kanban(&tasks, &board, columns()));
         }
         Command::Ls {
             sort,

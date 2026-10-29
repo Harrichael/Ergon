@@ -9,8 +9,9 @@ use anstyle::{AnsiColor, Style};
 use crate::derived::{self, Derived, Filter, Sort};
 use crate::fmt::timestamp;
 use crate::gantt::{Length, Schedule, Span};
+use crate::kanban::Board;
 use crate::landings::{self, At, Landing};
-use crate::task::Tasks;
+use crate::task::{Status, Tasks};
 
 const STORED: Style = Style::new().bold();
 const INFERRED: Style = AnsiColor::Cyan.on_default();
@@ -466,6 +467,88 @@ pub fn gantt(
         let _ = writeln!(out, "{DIM}{}{DIM:#}", key.join("   "));
     }
     out
+}
+
+/// `ergon kanban`: a column per status, side by side, each card its slug
+/// and title, wrapped to fit.
+pub fn kanban(tasks: &Tasks, board: &Board, columns: Option<usize>) -> String {
+    const GAP: usize = 2;
+    let statuses = [Status::Todo, Status::InProgress, Status::Landing, Status::Done];
+    let total = columns.unwrap_or(120);
+    let width = (total.saturating_sub(GAP * (statuses.len() - 1)) / statuses.len()).max(12);
+
+    // Each line is its text, unstyled so it pads right, and its style.
+    let stacks: Vec<Vec<(String, Style)>> = statuses
+        .iter()
+        .map(|&status| {
+            let cells: Vec<_> = board
+                .cells
+                .iter()
+                .filter(|(c, _)| c.status() == status)
+                .collect();
+            let count: usize = cells.iter().map(|(_, ids)| ids.len()).sum();
+            let heading = match board.older_done {
+                n if status == Status::Done && n > 0 => {
+                    format!("{} ({count} of {})", status.as_str(), count + n)
+                }
+                _ => format!("{} ({count})", status.as_str()),
+            };
+            let mut lines = vec![
+                (ellipsize(&heading, width), GROUP),
+                ("─".repeat(width), DIM),
+            ];
+            for (cell, ids) in cells {
+                if let Some(label) = cell.label() {
+                    let heading = format!("{label} ({})", ids.len());
+                    lines.push((ellipsize(&heading, width), DIM));
+                }
+                for &id in ids {
+                    let t = tasks.get(id);
+                    let card = format!("{} {}", t.slug, t.title());
+                    for part in wrap_hanging(&card, width, t.slug.chars().count() + 1) {
+                        lines.push((part, Style::new()));
+                    }
+                }
+            }
+            lines
+        })
+        .collect();
+
+    let height = stacks.iter().map(Vec::len).max().unwrap_or(0);
+    let mut out = String::new();
+    for row in 0..height {
+        let mut line = String::new();
+        for (i, stack) in stacks.iter().enumerate() {
+            let (text, style) = stack.get(row).map_or(("", Style::new()), |(t, s)| (t.as_str(), *s));
+            if i > 0 {
+                line.push_str(&" ".repeat(GAP));
+            }
+            let pad = width.saturating_sub(text.chars().count());
+            let _ = write!(line, "{style}{text}{style:#}{}", " ".repeat(pad));
+        }
+        let _ = writeln!(out, "{}", line.trim_end());
+    }
+    out
+}
+
+/// `text` broken between words to fit `width`, continuation lines indented
+/// by `hang`; a word too long for a line is cut.
+fn wrap_hanging(text: &str, width: usize, hang: usize) -> Vec<String> {
+    let hang = " ".repeat(hang.min(width / 2));
+    let mut lines = Vec::new();
+    let mut cur = String::new();
+    for word in text.split(' ').filter(|w| !w.is_empty()) {
+        let fresh = cur.trim().is_empty();
+        if !fresh && cur.chars().count() + 1 + word.chars().count() > width {
+            lines.push(std::mem::replace(&mut cur, hang.clone()));
+        } else if !fresh {
+            cur.push(' ');
+        }
+        let room = width - cur.chars().count();
+        cur.push_str(&ellipsize(word, room));
+    }
+    lines.push(cur);
+    lines
 }
 
 /// `text` cut to `width` characters, ending in `…` when cut.

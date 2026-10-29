@@ -195,6 +195,23 @@ pub struct Tasks {
     pub deps: BTreeSet<(i64, i64)>,
 }
 
+/// When each of the project's done tasks last became done, from its
+/// history; only tasks done by a status of their own are here.
+pub fn done_at(conn: &Connection, project: &Project) -> Result<HashMap<i64, i64>> {
+    // Rows by id, not time: changes in the same second keep their order.
+    let mut stmt = conn.prepare(
+        "SELECT h.task_id, MIN(h.at) FROM task_history h JOIN tasks t ON t.id = h.task_id
+         WHERE t.project_id = ?1 AND t.status = 'done' AND h.status = 'done'
+           AND h.id > COALESCE((SELECT MAX(o.id) FROM task_history o
+                                WHERE o.task_id = h.task_id AND o.status IS NOT 'done'), 0)
+         GROUP BY h.task_id",
+    )?;
+    let rows = stmt
+        .query_map([project.id], |r| Ok((r.get(0)?, r.get(1)?)))?
+        .collect::<rusqlite::Result<_>>()?;
+    Ok(rows)
+}
+
 impl Tasks {
     pub fn load(conn: &Connection, project: &Project) -> Result<Tasks> {
         let mut stmt = conn.prepare(&format!(

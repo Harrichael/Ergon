@@ -447,10 +447,7 @@ pub fn ls(tasks: &Tasks, derived: &Derived, sort: Sort) -> Vec<i64> {
     for c in tasks.children(tasks.root().id) {
         visit(tasks, derived, c.id, &mut out);
     }
-    let fallback = |id: i64| {
-        let t = tasks.get(id);
-        (derived.priority(id).unwrap_or(5), t.created_at, t.id)
-    };
+    let fallback = |id: i64| urgency(tasks, derived, id);
     out.sort_by(|&a, &b| {
         let by_field = match (sort.key(tasks, derived, a), sort.key(tasks, derived, b)) {
             (Some(x), Some(y)) if sort.descending => y.cmp(&x),
@@ -460,6 +457,12 @@ pub fn ls(tasks: &Tasks, derived: &Derived, sort: Sort) -> Vec<i64> {
         by_field.then_with(|| fallback(a).cmp(&fallback(b)))
     });
     out
+}
+
+/// Sorts most urgent first, then oldest.
+pub fn urgency(tasks: &Tasks, derived: &Derived, id: i64) -> (u8, i64, i64) {
+    let t = tasks.get(id);
+    (derived.priority(id).unwrap_or(5), t.created_at, t.id)
 }
 
 fn visit(tasks: &Tasks, derived: &Derived, id: i64, out: &mut Vec<i64>) {
