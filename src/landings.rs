@@ -56,7 +56,7 @@ struct Pr {
     number: u64,
 }
 
-/// Where a front set's PR review stands, as of choros's last pass.
+/// Where a front or stacked set's PR review stands, as of choros's last pass.
 #[derive(Clone, Copy, Deserialize)]
 pub struct Review {
     pub draft: bool,
@@ -95,7 +95,7 @@ pub enum At {
 impl Landing {
     /// Still in the queue, so `choros landing open` can reach it.
     pub fn is_open(&self) -> bool {
-        matches!(self.state.as_str(), "queued" | "front")
+        matches!(self.state.as_str(), "queued" | "stacked" | "front")
     }
 
     /// Whether this set carries `id`.
