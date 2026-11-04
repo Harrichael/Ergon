@@ -129,10 +129,8 @@ $ ergon work FTFE,nHcx
 error: demo/nHcx is a subtask of demo/FTFE, which already includes it
 [exit 1]
 $ ergon work 9cDQ,qxpj/nope
-error: invalid value '9cDQ,qxpj/nope' for '[TASKS]': invalid task slug "nope"
-
-For more information, try '--help'.
-[exit 2]
+error: no project named "qxpj"
+[exit 1]
 $ ergon work
 error: the following required arguments were not provided:
   <TASKS|--interactive>

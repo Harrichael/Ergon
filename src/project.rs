@@ -115,7 +115,14 @@ pub fn find_by_name(conn: &Connection, name: &str) -> Result<Option<Project>> {
 }
 
 pub fn by_name(conn: &Connection, name: &str) -> Result<Project> {
-    find_by_name(conn, name)?.with_context(|| format!("no project named {name:?}"))
+    if let Some(p) = find_by_name(conn, name)? {
+        return Ok(p);
+    }
+    let all = list(conn, true)?;
+    match crate::suggest::nearest(name, all.iter().map(|p| p.name.as_str()))[..] {
+        [] => bail!("no project named {name:?}"),
+        ref near => bail!("no project named {name:?}; did you mean {}?", near.join(" or ")),
+    }
 }
 
 pub fn by_uuid(conn: &Connection, uuid: &str) -> Result<Project> {

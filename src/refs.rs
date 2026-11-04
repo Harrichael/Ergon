@@ -25,13 +25,25 @@ impl FromStr for TaskRef {
             }
             None => (None, s),
         };
-        if !slug::is_valid(slug) {
+        // Any word goes: one that is no slug gets a lookup's "did you mean".
+        if slug.is_empty() || !slug.chars().all(|c| c.is_ascii_alphanumeric()) {
             bail!("invalid task slug {slug:?}");
         }
         Ok(TaskRef {
             project,
             slug: slug.to_string(),
         })
+    }
+}
+
+impl TaskRef {
+    /// A reference whose slug could be a task's, as Ergon makes them.
+    pub fn exact(s: &str) -> Result<TaskRef> {
+        let r: TaskRef = s.parse()?;
+        if !slug::is_valid(&r.slug) {
+            bail!("invalid task slug {:?}", r.slug);
+        }
+        Ok(r)
     }
 }
 
@@ -112,8 +124,11 @@ mod tests {
         );
         let r: TaskRef = "ergon/root".parse().unwrap();
         assert_eq!(r.project.as_deref(), Some("ergon"));
-        for bad in ["E6d", "E0dn", "a b/E6dn", "/E6dn", "ergon/"] {
+        for bad in ["E6-n", "a b/E6dn", "/E6dn", "ergon/"] {
             assert!(bad.parse::<TaskRef>().is_err(), "{bad}");
+        }
+        for loose in ["E6d", "E0dn"] {
+            assert!(loose.parse::<TaskRef>().is_ok() && TaskRef::exact(loose).is_err(), "{loose}");
         }
     }
 

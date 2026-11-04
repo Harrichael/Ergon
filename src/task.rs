@@ -266,15 +266,35 @@ impl Tasks {
 
     /// A task by slug, deleted or not.
     pub fn find(&self, slug: &str) -> Result<&Task> {
+        self.lookup(slug, |_| true)
+    }
+
+    /// `slug`'s task, or an error naming the `suggested` tasks nearest it.
+    fn lookup(&self, slug: &str, suggested: impl Fn(&Task) -> bool) -> Result<&Task> {
         match self.by_slug.get(slug) {
             Some(id) => Ok(self.get(*id)),
-            None => bail!("no task {}/{slug}", self.project.name),
+            None => {
+                let pool = self.tasks.values().filter(|t| suggested(t));
+                let near = crate::suggest::nearest(slug, pool.map(|t| t.slug.as_str()));
+                let near: Vec<String> = near
+                    .iter()
+                    .map(|s| {
+                        let t = self.get(self.by_slug[*s]);
+                        let intent = t.intent.lines().next().unwrap_or("");
+                        format!("\n  {}  {intent}", self.reference(t.id))
+                    })
+                    .collect();
+                match near.as_slice() {
+                    [] => bail!("no task {}/{slug}", self.project.name),
+                    _ => bail!("no task {}/{slug}; did you mean:{}", self.project.name, near.concat()),
+                }
+            }
         }
     }
 
     /// A live (not deleted) task by slug.
     pub fn live(&self, slug: &str) -> Result<&Task> {
-        let t = self.find(slug)?;
+        let t = self.lookup(slug, |t| !t.is_deleted())?;
         if t.is_deleted() {
             bail!("{} is deleted", self.reference(t.id));
         }

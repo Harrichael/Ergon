@@ -168,7 +168,7 @@ pub fn read(dir: &Path) -> Result<Option<Vec<Landing>>> {
 fn task_refs(labels: &[String]) -> Vec<TaskRef> {
     labels
         .iter()
-        .filter_map(|l| l.parse::<TaskRef>().ok())
+        .filter_map(|l| TaskRef::exact(l).ok())
         .filter(|r| r.project.is_some())
         .collect()
 }

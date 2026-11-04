@@ -12,6 +12,7 @@ pub mod picker;
 pub mod project;
 pub mod refs;
 pub mod slug;
+pub mod suggest;
 pub mod task;
 pub mod view;
 
