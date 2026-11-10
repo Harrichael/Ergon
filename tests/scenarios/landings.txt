@@ -85,7 +85,7 @@ Subtasks:
   - nHcx  in_progress  Docs
 
 Landings:
-  - appq  landing-1  merged  app #112  (FTFE)
+  1 merged (--merged lists them)
   - appq  landing-2  front   app #118  (nHcx)
     choros landing open 2 --queue appq
   - appq  landing-3  queued  app, no PR
@@ -107,7 +107,7 @@ delete:    ergon rm demo/FTFE --subtasks 0 --dependents 0
 API
 
 Landings:
-  - appq  landing-1  merged  app #112
+  1 merged (--merged lists them)
 
 # PR numbers are per repo, so PR 118 may be two sets.
 $ ergon show --pr 118

@@ -103,8 +103,7 @@ delete:    ergon rm demo/9cDQ --subtasks 0 --dependents 0
 Billing
 
 Landings:
-  - appq  landing-3  merged  app #114
-  - appq  landing-4  merged  app #115
+  2 merged (--merged lists them)
 demo/9cDQ done: its landings merged
 
 # A land straight to main makes no set; choros lists it under `instant`, and
@@ -131,5 +130,21 @@ delete:    ergon rm demo/qwpT --subtasks 0 --dependents 0
 Import
 
 Landings:
-  - main  1c096c9  merged  app, no PR
+  1 merged (--merged lists them)
 demo/qwpT done: its landings merged
+
+# --merged lists the sets that have merged, not just their number.
+$ ergon show qwpT --merged
+demo/qwpT  Import
+status:    done
+priority:  p-
+blocked:   no
+parent:    demo/root  Build a demo
+created:   2025-10-09 08:53 (just now)
+updated:   2025-10-09 08:53 (just now)
+delete:    ergon rm demo/qwpT --subtasks 0 --dependents 0
+
+Import
+
+Landings:
+  - main  1c096c9  merged  app, no PR

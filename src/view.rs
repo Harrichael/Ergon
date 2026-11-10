@@ -83,13 +83,15 @@ fn status(tasks: &Tasks, id: i64) -> String {
     format!("{:<11}", tasks.effective_status(id).as_str())
 }
 
-/// One task in full. `landings` is what choros reported, if it's installed.
+/// One task in full. `landings` is what choros reported, if it's installed;
+/// those that have merged are only counted unless `merged`.
 pub fn show(
     tasks: &Tasks,
     derived: &Derived,
     id: i64,
     now: i64,
     landings: Option<&anyhow::Result<Vec<Landing>>>,
+    merged: bool,
 ) -> String {
     let t = tasks.get(id);
     let mut out = String::new();
@@ -207,9 +209,18 @@ pub fn show(
             let _ = writeln!(out, "\nLandings:\n  {DIM}can't read them: {e:#}{DIM:#}");
         }
         Some(Ok(all)) => {
-            let mine = landings::of_task(tasks, id, all);
+            let mut mine = landings::of_task(tasks, id, all);
             if !mine.is_empty() {
                 let _ = writeln!(out, "\nLandings:");
+            }
+            // What has merged is history; a long-lived task gathers a lot.
+            let found = mine.len();
+            if !merged {
+                mine.retain(|tl| tl.landing.state != "merged");
+            }
+            let hidden = found - mine.len();
+            if hidden > 0 {
+                let _ = writeln!(out, "  {DIM}{hidden} merged (--merged lists them){DIM:#}");
             }
             for tl in mine {
                 let others: Vec<&str> = tl

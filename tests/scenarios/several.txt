@@ -1,0 +1,129 @@
+# show, edit and dep take several tasks as `slug,slug`; an edit or a dep is
+# made for all of them or none. `edit --append` adds a paragraph to an
+# intent, and `-` reads the text from stdin.
+
+$ cd ws
+$ ergon init demo "Build a demo" --no-launch
+Created project demo in $ROOT/ws
+$ ergon add Backend
+qxpj
+$ ergon add Frontend
+FTFE
+$ ergon add Docs
+nHcx
+$ ergon edit qxpj,FTFE --priority p1 --append "Decided: no ORM."
+$ ergon show qxpj,FTFE --intent
+demo/qxpj
+Backend
+
+Decided: no ORM.
+
+demo/FTFE
+Frontend
+
+Decided: no ORM.
+$ ergon edit nHcx --append - <<EOF
+Covers the API only.
+
+The UI has its own guide.
+EOF
+$ ergon show nHcx --intent
+Docs
+
+Covers the API only.
+
+The UI has its own guide.
+$ ergon edit qxpj --intent - <<EOF
+Backend, rewritten
+EOF
+$ ergon show qxpj --intent
+Backend, rewritten
+$ ergon edit qxpj,FTFE --intent "One for both"
+error: --intent replaces one task's intent; to add the same text to several, use --append
+[exit 1]
+$ ergon edit qxpj,nope --priority p0
+error: no task demo/nope
+[exit 1]
+$ ergon show qxpj,FTFE
+demo/qxpj  Backend, rewritten
+status:    todo
+priority:  p1
+blocked:   no
+parent:    demo/root  Build a demo
+created:   2025-10-09 08:53 (just now)
+updated:   2025-10-09 08:53 (just now)
+delete:    ergon rm demo/qxpj --subtasks 0 --dependents 0
+
+Backend, rewritten
+
+demo/FTFE  Frontend
+status:    todo
+priority:  p1
+blocked:   no
+parent:    demo/root  Build a demo
+created:   2025-10-09 08:53 (just now)
+updated:   2025-10-09 08:53 (just now)
+delete:    ergon rm demo/FTFE --subtasks 0 --dependents 0
+
+Frontend
+
+Decided: no ORM.
+$ ergon dep add nHcx qxpj,FTFE
+$ ergon dep add qxpj,FTFE nHcx
+error: refused: these tasks would wait on each other: demo/qxpj -> demo/nHcx -> demo/qxpj
+[exit 1]
+$ ergon show nHcx
+demo/nHcx  Docs
+status:    todo
+priority:  p-
+blocked:   yes, waiting on demo/qxpj, demo/FTFE
+parent:    demo/root  Build a demo
+created:   2025-10-09 08:53 (just now)
+updated:   2025-10-09 08:53 (just now)
+delete:    ergon rm demo/nHcx --subtasks 0 --dependents 0
+
+Docs
+
+Covers the API only.
+
+The UI has its own guide.
+
+Depends on:
+  - qxpj  todo         Backend, rewritten
+  - FTFE  todo         Frontend
+$ ergon dep rm nHcx qxpj,FTFE
+$ ergon show nHcx
+demo/nHcx  Docs
+status:    todo
+priority:  p-
+blocked:   no
+parent:    demo/root  Build a demo
+created:   2025-10-09 08:53 (just now)
+updated:   2025-10-09 08:53 (just now)
+delete:    ergon rm demo/nHcx --subtasks 0 --dependents 0
+
+Docs
+
+Covers the API only.
+
+The UI has its own guide.
+$ ergon help dep add
+Record that a task depends on another
+
+Each side can be several, as `slug,slug,...`: every task then depends on every one named, or none does if one is refused.
+
+Usage: ergon dep add [OPTIONS] <TASKS> <DEPENDS_ON>
+
+Arguments:
+  <TASKS>
+          
+
+  <DEPENDS_ON>
+          
+
+Options:
+      --project <PROJECT>
+          Project to act on, instead of the one named by the nearest .ergon file
+
+  -h, --help
+          Print help (see a summary with '-h')

@@ -21,7 +21,8 @@
 //! - `$ fake-choros <<EOF` puts a fake `choros` on PATH for the rest of the
 //!   scenario. Its `status --json --all` prints the JSON given here, and its
 //!   `here` names this directory as a workspace, when run in this directory;
-//!   both fail elsewhere.
+//!   both fail elsewhere. Its `landing` prints the directory and arguments
+//!   it was run with.
 //! - The expected output is every line up to the next `$ ` line, minus
 //!   trailing blank and comment lines. It's stdout, then stderr, then
 //!   `[exit N]` if the command failed. A line of just `...` matches any
@@ -52,6 +53,7 @@ fi
 
 // Treats the directory `fake-choros` left its JSON in as a workspace.
 const FAKE_CHOROS: &str = r#"#!/bin/sh
+if [ "$1" = landing ]; then printf '[choros in %s]\n' "$PWD"; printf '%s\n' "$@"; exit 0; fi
 case "$*" in "status --json --all"|here) ;; *) echo "choros: fake choros can't $*" >&2; exit 2;; esac
 [ -f .choros-status.json ] || { echo "choros: not under a choros trunk (no .choros-config above here)" >&2; exit 1; }
 if [ "$1" = here ]; then printf 'here: workspace %s\n' "${PWD##*/}"; else cat .choros-status.json; fi

@@ -75,11 +75,20 @@ This session's folder is in a choros space. `choros here` says:
 {{ choros_here }}
 ```
 
-`choros help agent` says how to work in it. Pass each task a land carries to
-`choros land` as `--label`, by its reference (like
-`--label {{ tasks.0.reference }}`): `ergon show` finds a land's tasks by these
-labels. If this session began in a choros workspace, don't run
-`choros land archive` or `choros archive` on it.
+`choros help agent` says how to work in it. Each `choros land` tells ergon
+what it lands, so name the tasks a land carries with `--label`, by their
+references (like `--label {{ tasks.0.reference }}`); with none named, it
+carries the tasks of this session.
+
+- `choros land continue` lands a piece. This workspace stays and the task
+  stays in_progress. A subtask the land carries is set to landing for you,
+  unless work under it is still open.
+- `choros land archive` lands the last of the work: the task is set to
+  landing for you and this workspace is archived. It is refused while a
+  subtask is still todo or in_progress. `ergon work` then opens the set's
+  landing folder, where review fixes go.
+
+Don't run `choros archive` on this workspace.
 {%- endif %}
 
 ## Start

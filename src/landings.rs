@@ -174,13 +174,18 @@ fn task_refs(labels: &[String]) -> Vec<TaskRef> {
 }
 
 /// The directory to ask choros from for `id`: where its session, or its
-/// nearest ancestor's, began, if that's still there.
+/// nearest ancestor's, began, or the nearest folder above that is still
+/// there, since a workspace is archived out of the trunk its queues are in.
 pub fn dir_for(tasks: &Tasks, id: i64) -> Option<&Path> {
     std::iter::once(id)
         .chain(tasks.ancestors(id))
         .find_map(|t| tasks.get(t).claude_cwd.as_deref())
-        .map(Path::new)
-        .filter(|d| d.is_dir())
+        .and_then(|d| still_there(Path::new(d)))
+}
+
+/// `dir`, or the nearest folder above it that exists.
+pub fn still_there(dir: &Path) -> Option<&Path> {
+    dir.ancestors().find(|a| a.is_dir())
 }
 
 /// A set that carries `id` or a task under it, with the ones it carries.

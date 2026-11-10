@@ -80,9 +80,11 @@ pub fn add(
 
 /// Fields to change; `None` leaves a field as it is. For status, priority,
 /// size and attention, `Some(None)` unsets the field.
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct Changes {
     pub intent: Option<String>,
+    /// A paragraph to add after the intent as it stands.
+    pub append: Option<String>,
     pub status: Option<Option<Status>>,
     pub priority: Option<Option<u8>>,
     pub size: Option<Option<u32>>,
@@ -97,21 +99,54 @@ pub fn edit(
     slug: &str,
     changes: Changes,
 ) -> Result<Vec<String>> {
+    edit_all(conn, project, &[slug.to_string()], changes)
+}
+
+/// `edit` for several tasks, each taking the same changes: all of them, or
+/// none if one is refused.
+pub fn edit_all(
+    conn: &mut Connection,
+    project: &Project,
+    slugs: &[String],
+    changes: Changes,
+) -> Result<Vec<String>> {
     if changes.intent.is_none()
+        && changes.append.is_none()
         && changes.status.is_none()
         && changes.priority.is_none()
         && changes.size.is_none()
         && changes.attention.is_none()
     {
-        bail!("nothing to change: pass --intent, --status, --priority, --size or --attention");
+        bail!(
+            "nothing to change: pass --intent, --append, --status, --priority, --size or --attention"
+        );
     }
     let tx = conn.transaction()?;
     let tasks = Tasks::load(&tx, project)?;
+    let mut cancelled = Vec::new();
+    for slug in slugs {
+        cancelled.extend(edit_one(&tx, &tasks, slug, changes.clone())?);
+    }
+    // Every task is edited from the one reading, so a task under two of
+    // them is reported twice, and one named can be reported under another.
+    let named: Vec<String> = slugs
+        .iter()
+        .map(|s| Ok(tasks.reference(tasks.live(s)?.id)))
+        .collect::<Result<_>>()?;
+    cancelled.retain(|r| !named.contains(r));
+    cancelled.sort();
+    cancelled.dedup();
+    commit_valid(tx, project)?;
+    Ok(cancelled)
+}
+
+fn edit_one(tx: &Transaction, tasks: &Tasks, slug: &str, changes: Changes) -> Result<Vec<String>> {
     let task = tasks.live(slug)?;
 
-    let intent = match changes.intent {
-        Some(i) => clean_intent(&i)?,
-        None => task.intent.clone(),
+    let intent = match (changes.intent, changes.append) {
+        (Some(i), _) => clean_intent(&i)?,
+        (None, Some(more)) => format!("{}\n\n{}", task.intent, clean_intent(&more)?),
+        (None, None) => task.intent.clone(),
     };
     let status = changes.status.unwrap_or(task.status);
     let priority = changes.priority.unwrap_or(task.priority);
@@ -153,8 +188,6 @@ pub fn edit(
             }
         }
     }
-
-    commit_valid(tx, project)?;
     Ok(cancelled)
 }
 
@@ -213,6 +246,76 @@ pub fn dep_add(
         params![t.id, d.id],
     )?;
     commit_valid(tx, project)
+}
+
+/// `dep_add` for every task in `tasks` on every one in `depends_on`: all,
+/// or none if one is refused.
+pub fn dep_add_all(
+    conn: &mut Connection,
+    project: &Project,
+    tasks: &[String],
+    depends_on: &[String],
+) -> Result<()> {
+    let tx = conn.transaction()?;
+    let all = Tasks::load(&tx, project)?;
+    let mut added = Vec::new();
+    for task in tasks {
+        for on in depends_on {
+            let (t, d) = (all.live(task)?, all.live(on)?);
+            // Named twice in one list is a slip, not a second dependency.
+            if added.contains(&(t.id, d.id)) {
+                continue;
+            }
+            if all.deps.contains(&(t.id, d.id)) {
+                bail!(
+                    "{} already depends on {}",
+                    all.reference(t.id),
+                    all.reference(d.id)
+                );
+            }
+            tx.execute(
+                "INSERT INTO task_deps (task_id, depends_on) VALUES (?1, ?2)",
+                params![t.id, d.id],
+            )?;
+            added.push((t.id, d.id));
+        }
+    }
+    commit_valid(tx, project)
+}
+
+/// `dep_rm` for every task in `tasks` on every one in `depends_on`: all, or
+/// none if one isn't there.
+pub fn dep_rm_all(
+    conn: &mut Connection,
+    project: &Project,
+    tasks: &[String],
+    depends_on: &[String],
+) -> Result<()> {
+    let tx = conn.transaction()?;
+    let all = Tasks::load(&tx, project)?;
+    let mut gone = Vec::new();
+    for task in tasks {
+        for on in depends_on {
+            let (t, d) = (all.live(task)?, all.live(on)?);
+            if gone.contains(&(t.id, d.id)) {
+                continue;
+            }
+            gone.push((t.id, d.id));
+            let removed = tx.execute(
+                "DELETE FROM task_deps WHERE task_id = ?1 AND depends_on = ?2",
+                params![t.id, d.id],
+            )?;
+            if removed == 0 {
+                bail!(
+                    "{} doesn't depend on {}",
+                    all.reference(t.id),
+                    all.reference(d.id)
+                );
+            }
+        }
+    }
+    tx.commit()?;
+    Ok(())
 }
 
 /// Removes the dependency of `task` on `depends_on`.

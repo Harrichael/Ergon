@@ -5,6 +5,7 @@ pub mod export;
 pub mod fmt;
 pub mod gantt;
 pub mod kanban;
+pub mod land;
 pub mod landings;
 pub mod ops;
 pub mod outline;

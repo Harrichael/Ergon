@@ -128,6 +128,11 @@ goes wrong.
 
 **Open** means `todo` or `in_progress`. **Closed** means `done` or `cancelled`.
 
+`ergon land-hook`, run by `choros land` as a trunk's land hook, turns the
+tasks a land carries to `landing`: every one on `choros land archive`, and on
+`choros land continue` only a subtask of a task being worked on, since that
+task goes on.
+
 `ergon ls` and `ergon show` turn a `landing` task `done` once choros reports
 every landing set that carries it, or a task under it, as merged, and at
 least one does; the `landing` tasks under it go `done` with it. Nothing else
@@ -366,8 +371,8 @@ There are two prompts:
   <how to move the tasks to landing, and to name them in PRs>
 
   ## Choros
-  <what `choros here` says of the session's folder, and to pass each
-  task to `choros land` as --label>
+  <what `choros here` says of the session's folder, and that
+  `choros land continue|archive` moves the tasks a land carries>
 
   ## Start
   Ask the user how they'd like to start.

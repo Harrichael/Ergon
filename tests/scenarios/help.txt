@@ -23,26 +23,27 @@ Minimal task tracker for dispatching work to Claude Code sessions
 Usage: ergon [OPTIONS] <COMMAND>
 
 Commands:
-  init     Create a project and its root task, write .ergon here, and launch the planner session
-  project  Manage projects
-  add      Create a task and print its slug
-  edit     Change a task's intent, status, priority, size or attention
-  rm       Delete a task and its subtree. The counts must match `show`
-  restore  Undo a deletion
-  mv       Move a task, with its subtree, under a new parent
-  show     Show one task in full, with the choros landing sets that carry it
-  tree     Show the task tree (default: from the root)
-  gantt    Chart the order open work can run in
-  kanban   Show the project as a board, a column per status
-  ls       List the coarsest open, unblocked work, most urgent first
-  outline  Print the project as an editable table, or apply an edited one
-  dep      Manage dependencies
-  export   Print projects in full as JSON, for backups or another database
-  import   Add the projects in an export (a file, or stdin) to this database
-  work     Start or resume the Claude Code session for a task, or for several
-  attach   Record the Claude Code session you're in on a task, or on several
-  prompt   Print the prompt `ergon work` starts a session with
-  help     Print help for ergon or a command; `ergon help planner` prints the planner's instructions
+  init       Create a project and its root task, write .ergon here, and launch the planner session
+  project    Manage projects
+  add        Create a task and print its slug
+  edit       Change a task's intent, status, priority, size or attention
+  rm         Delete a task and its subtree. The counts must match `show`
+  restore    Undo a deletion
+  mv         Move a task, with its subtree, under a new parent
+  show       Show a task in full, with the choros landing sets that carry it
+  tree       Show the task tree (default: from the root)
+  gantt      Chart the order open work can run in
+  kanban     Show the project as a board, a column per status
+  ls         List the coarsest open, unblocked work, most urgent first
+  outline    Print the project as an editable table, or apply an edited one
+  dep        Manage dependencies
+  export     Print projects in full as JSON, for backups or another database
+  import     Add the projects in an export (a file, or stdin) to this database
+  work       Start or resume the Claude Code session for a task, or for several
+  attach     Record the Claude Code session you're in on a task, or on several
+  land-hook  What `choros land` runs before and after a land, to move its tasks
+  prompt     Print the prompt `ergon work` starts a session with
+  help       Print help for ergon or a command; `ergon help planner` prints the planner's instructions
 
 Options:
       --project <PROJECT>  Project to act on, instead of the one named by the nearest .ergon file

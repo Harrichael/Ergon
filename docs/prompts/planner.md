@@ -128,10 +128,11 @@ ergon tree [<slug>] [--ls]
     The task tree, with slug, status and priority for each task, and size
     and attention once any task has one. --ls marks with ▸ the tasks
     `ergon ls` would list.
-ergon show <slug>
-    One task in full: intent, status, priority, blocked or not,
+ergon show <slug>[,<slug>…] [--intent] [--merged]
+    A task in full: intent, status, priority, blocked or not,
     dependencies and dependents, subtask titles, and the command to
-    delete it.
+    delete it. --intent prints only the intent; --merged lists the
+    landing sets that have merged, which are otherwise only counted.
 ergon ls [--subtasks] [--groups | --ancestors] [--priority|--attention|--size RANGE] [--status S] [--intent]
     Work that's ready to start. --subtasks lists each task's subtasks
     under it. --groups puts tasks under the parents they share, where two
@@ -147,8 +148,11 @@ ergon prompt root
 
 ergon add <intent> [--parent <slug>] [--status <status>] [--priority <pN>] [--size <N>] [--attention <1-10>]
     Create a task (under the root by default) and print its slug.
-ergon edit <slug> [--intent <text>] [--status <status>|none] [--priority <pN>|none] [--size <N>|none] [--attention <1-10>|none]
-    Change a task. `none` unsets the status, priority, size or attention.
+ergon edit <slug>[,<slug>…] [--intent <text> | --append <text>] [--status <status>|none] [--priority <pN>|none] [--size <N>|none] [--attention <1-10>|none]
+    Change a task, or several the same way. `none` unsets the status,
+    priority, size or attention. --append adds a paragraph to the intent
+    as it stands; `-` as the text of --intent or --append reads it from
+    stdin.
 ergon mv <slug> <new-parent-slug>
     Move a task, with its subtree, under a different parent.
 ergon rm <slug> --subtasks <N> --dependents <M>
@@ -156,8 +160,9 @@ ergon rm <slug> --subtasks <N> --dependents <M>
 ergon restore <slug>
     Undo a deletion.
 
-ergon dep add <slug> <depends-on-slug>
-ergon dep rm <slug> <depends-on-slug>
+ergon dep add <slug>[,<slug>…] <depends-on-slug>[,<slug>…]
+ergon dep rm <slug>[,<slug>…] <depends-on-slug>[,<slug>…]
+    Each task named first depends on each named second.
 ```
 
 Pass multi-line intents as a single quoted argument.

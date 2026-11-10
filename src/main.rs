@@ -9,7 +9,7 @@ use ergon::refs::{self, TaskRef, TaskRefs};
 use ergon::task::{self, Status, Tasks};
 
 use ergon::derived::{Derived, Filter, Range, SortField};
-use ergon::{claude, db, export, fmt, gantt, kanban, landings, outline, picker, view};
+use ergon::{claude, db, export, fmt, gantt, kanban, land, landings, outline, picker, view};
 use std::io::Read;
 
 /// Minimal task tracker for dispatching work to Claude Code sessions.
@@ -58,11 +58,19 @@ enum Command {
         #[arg(long, value_parser = parse_attention)]
         attention: Option<u8>,
     },
-    /// Change a task's intent, status, priority, size or attention.
+    /// Change a task's intent, status, priority, size or attention
+    ///
+    /// Several tasks, as `slug,slug,...`, all take the same change, or none
+    /// does if one is refused.
     Edit {
-        task: TaskRef,
+        tasks: TaskRefs,
+        /// The new intent, or `-` to read it from stdin.
         #[arg(long)]
         intent: Option<String>,
+        /// Text to add to the intent as a new paragraph, or `-` to read it
+        /// from stdin.
+        #[arg(long, conflicts_with = "intent")]
+        append: Option<String>,
         /// A status, or `none` to follow the parent's.
         #[arg(long, value_parser = parse_status_or_none)]
         status: Option<OrNone<Status>>,
@@ -90,15 +98,20 @@ enum Command {
     Restore { task: TaskRef },
     /// Move a task, with its subtree, under a new parent.
     Mv { task: TaskRef, new_parent: TaskRef },
-    /// Show one task in full, with the choros landing sets that carry it.
+    /// Show a task in full, with the choros landing sets that carry it
+    ///
+    /// Several tasks, as `slug,slug,...`, are shown one after another.
     Show {
         #[arg(required_unless_present = "pr")]
-        task: Option<TaskRef>,
+        tasks: Option<TaskRefs>,
         /// Print only the intent.
         #[arg(long)]
         intent: bool,
+        /// List the landing sets that have merged too, not just their number.
+        #[arg(long)]
+        merged: bool,
         /// Instead, show the landing sets of this PR and the tasks they carry.
-        #[arg(long, conflicts_with_all = ["task", "intent"])]
+        #[arg(long, conflicts_with_all = ["tasks", "intent", "merged"])]
         pr: Option<u64>,
     },
     /// Show the task tree (default: from the root).
@@ -254,9 +267,10 @@ enum Command {
     /// that every one of them records. Once they have it, `ergon work` on any
     /// of them resumes it.
     ///
-    /// The session resumes only from the folder it began in. In a choros
-    /// space, don't start it inside a workspace that may be archived
-    /// (`choros land archive` or `choros archive` moves it).
+    /// The session resumes only from the folder it began in. Once that is
+    /// gone, as after `choros land archive`, this opens the landing folder
+    /// of the open set that carries the tasks instead (`choros landing
+    /// open`).
     #[command(group(clap::ArgGroup::new("which").required(true).args(["tasks", "interactive"])))]
     Work {
         /// Comma-separated, or `-` to read them from stdin, as in
@@ -277,6 +291,25 @@ enum Command {
         #[arg(long)]
         session: Option<String>,
     },
+    /// What `choros land` runs before and after a land, to move its tasks
+    ///
+    /// Set it as a trunk's land hook, in `.choros-config/hooks.toml`:
+    ///
+    ///     land = "ergon land-hook"
+    ///
+    /// A land carries the tasks its `--label`s name, or with none named,
+    /// the ones its Claude Code session is recorded on. Choros is told
+    /// them all as labels, the most urgent priority among them, and the
+    /// PR body with them named under it.
+    ///
+    /// After `choros land continue`, the tasks being worked on stay as they
+    /// are, and a subtask of one that the land carries is set to landing,
+    /// unless work under it is still open. After `choros land archive`,
+    /// every carried task is set to landing; the land is refused while a
+    /// subtask of one, or another task of the same session, is still todo
+    /// or in progress.
+    #[command(verbatim_doc_comment)]
+    LandHook { stage: Stage },
     /// Print the prompt `ergon work` starts a session with
     ///
     /// Rendered from the tasks as they are now, not as they were when the
@@ -284,15 +317,26 @@ enum Command {
     Prompt { tasks: TaskRefs },
     /// Print help for ergon or a command; `ergon help planner` prints the
     /// planner's instructions.
-    Help { topic: Option<String> },
+    Help { topic: Vec<String> },
+}
+
+#[derive(Clone, Copy, clap::ValueEnum)]
+enum Stage {
+    Before,
+    After,
 }
 
 #[derive(Subcommand)]
 enum DepCommand {
-    /// Record that a task depends on another.
-    Add { task: TaskRef, depends_on: TaskRef },
-    /// Remove a dependency.
-    Rm { task: TaskRef, depends_on: TaskRef },
+    /// Record that a task depends on another
+    ///
+    /// Each side can be several, as `slug,slug,...`: every task then
+    /// depends on every one named, or none does if one is refused.
+    Add { tasks: TaskRefs, depends_on: TaskRefs },
+    /// Remove a dependency
+    ///
+    /// Each side can be several, as `add` takes them.
+    Rm { tasks: TaskRefs, depends_on: TaskRefs },
 }
 
 #[derive(Subcommand)]
@@ -454,7 +498,7 @@ fn main() {
 
 fn run(cli: Cli) -> Result<()> {
     if let Command::Help { topic } = &cli.command {
-        return help(topic.as_deref());
+        return help(topic);
     }
     let mut conn = db::open(&db::default_path()?)?;
     let cwd = std::env::current_dir()?;
@@ -504,22 +548,27 @@ fn run(cli: Cli) -> Result<()> {
             );
         }
         Command::Edit {
-            task,
+            tasks,
             intent,
+            append,
             status,
             priority,
             size,
             attention,
         } => {
-            let p = project_for(&conn, &[&task])?;
+            let p = project_for(&conn, &tasks.iter().collect::<Vec<_>>())?;
+            if intent.is_some() && tasks.0.len() > 1 {
+                bail!("--intent replaces one task's intent; to add the same text to several, use --append");
+            }
             let changes = Changes {
-                intent,
+                intent: intent.map(text_or_stdin).transpose()?,
+                append: append.map(text_or_stdin).transpose()?,
                 status: status.map(|s| s.0),
                 priority: priority.map(|p| p.0),
                 size: size.map(|s| s.0),
                 attention: attention.map(|a| a.0),
             };
-            for r in ops::edit(&mut conn, &p, &task.slug, changes)? {
+            for r in ops::edit_all(&mut conn, &p, &tasks.slugs(), changes)? {
                 println!("Also cancelled {r}");
             }
         }
@@ -542,7 +591,7 @@ fn run(cli: Cli) -> Result<()> {
             }
         }
         Command::Show {
-            task: None,
+            tasks: None,
             pr: Some(pr),
             ..
         } => {
@@ -559,25 +608,45 @@ fn run(cli: Cli) -> Result<()> {
                 .collect::<Result<Vec<_>>>()?;
             print!("{}", view::pr_tasks(&sets, &projects));
         }
-        Command::Show { task, intent, .. } => {
-            let task = task.expect("clap requires a task without --pr");
-            let p = project_for(&conn, &[&task])?;
+        Command::Show {
+            tasks: given,
+            intent,
+            merged,
+            ..
+        } => {
+            let given = given.expect("clap requires a task without --pr");
+            let p = project_for(&conn, &given.iter().collect::<Vec<_>>())?;
             if !intent {
                 finish_merged(&mut conn, &p, &cwd)?;
             }
             let tasks = Tasks::load(&conn, &p)?;
-            let id = tasks.live(&task.slug)?.id;
-            if intent {
-                println!("{}", tasks.get(id).intent);
-                return Ok(());
-            }
+            let ids = given
+                .iter()
+                .map(|r| Ok(tasks.live(&r.slug)?.id))
+                .collect::<Result<Vec<i64>>>()?;
             let derived = Derived::compute(&tasks);
-            let dir = landings::dir_for(&tasks, id).unwrap_or(&cwd);
-            let found = landings::read(dir).transpose();
-            print!(
-                "{}",
-                view::show(&tasks, &derived, id, ergon::now(), found.as_ref())
-            );
+            // Tasks worked in one folder share what choros says there.
+            let mut read = std::collections::HashMap::new();
+            for (i, &id) in ids.iter().enumerate() {
+                if i > 0 {
+                    println!();
+                }
+                if intent {
+                    if ids.len() > 1 {
+                        println!("{}", tasks.reference(id));
+                    }
+                    println!("{}", tasks.get(id).intent);
+                    continue;
+                }
+                let dir = landings::dir_for(&tasks, id).unwrap_or(&cwd);
+                let found = read
+                    .entry(dir)
+                    .or_insert_with(|| landings::read(dir).transpose());
+                print!(
+                    "{}",
+                    view::show(&tasks, &derived, id, ergon::now(), found.as_ref(), merged)
+                );
+            }
         }
         Command::Tree { task, ls } => {
             let p = project_for(&conn, &task.iter().collect::<Vec<_>>())?;
@@ -780,13 +849,29 @@ fn run(cli: Cli) -> Result<()> {
             print!("{}", claude::prompt(&all, &ids, &cwd));
         }
         Command::Help { .. } => unreachable!("handled above"),
-        Command::Dep(DepCommand::Add { task, depends_on }) => {
-            let p = project_for(&conn, &[&task, &depends_on])?;
-            ops::dep_add(&mut conn, &p, &task.slug, &depends_on.slug)?;
+        Command::LandHook { stage } => {
+            let told: land::Told = serde_json::from_reader(std::io::stdin())
+                .context("reading the land from stdin, as choros's land hook gives it")?;
+            match stage {
+                Stage::Before => {
+                    if let Some(reply) = land::before(&mut conn, &told)? {
+                        println!("{}", serde_json::to_string(&reply)?);
+                    }
+                }
+                Stage::After => {
+                    for line in land::after(&mut conn, &told)? {
+                        eprintln!("{line}");
+                    }
+                }
+            }
         }
-        Command::Dep(DepCommand::Rm { task, depends_on }) => {
-            let p = project_for(&conn, &[&task, &depends_on])?;
-            ops::dep_rm(&mut conn, &p, &task.slug, &depends_on.slug)?;
+        Command::Dep(DepCommand::Add { tasks, depends_on }) => {
+            let p = project_for(&conn, &tasks.iter().chain(depends_on.iter()).collect::<Vec<_>>())?;
+            ops::dep_add_all(&mut conn, &p, &tasks.slugs(), &depends_on.slugs())?;
+        }
+        Command::Dep(DepCommand::Rm { tasks, depends_on }) => {
+            let p = project_for(&conn, &tasks.iter().chain(depends_on.iter()).collect::<Vec<_>>())?;
+            ops::dep_rm_all(&mut conn, &p, &tasks.slugs(), &depends_on.slugs())?;
         }
     }
     Ok(())
@@ -843,19 +928,36 @@ fn launch(l: claude::Launch, stdin: Option<std::fs::File>) -> Result<()> {
     l.exec(stdin)
 }
 
-fn help(topic: Option<&str>) -> Result<()> {
+/// `ergon help`, `ergon help planner`, or a command's help by its words:
+/// `ergon help dep add`.
+fn help(topic: &[String]) -> Result<()> {
     let mut cmd = Cli::command();
-    match topic {
-        None => cmd.print_help()?,
-        Some("planner") => print!("{}", claude::PLANNER_DOC),
-        Some(name) if cmd.find_subcommand(name).is_some() => {
-            if let Err(e) = Cli::try_parse_from(["ergon", name, "--help"]) {
+    let words: Vec<&str> = topic.iter().map(String::as_str).collect();
+    match words.as_slice() {
+        [] => cmd.print_help()?,
+        ["planner"] => print!("{}", claude::PLANNER_DOC),
+        _ => {
+            let mut sub = &cmd;
+            for word in &words {
+                sub = sub
+                    .find_subcommand(word)
+                    .with_context(|| format!("no help topic {:?}; try `ergon help`", words.join(" ")))?;
+            }
+            let args = ["ergon"].into_iter().chain(words.iter().copied()).chain(["--help"]);
+            if let Err(e) = Cli::try_parse_from(args) {
                 e.print()?;
             }
         }
-        Some(name) => bail!("no help topic {name:?}; try `ergon help`"),
     }
     Ok(())
+}
+
+/// `text`, or what stdin holds when it is `-`.
+fn text_or_stdin(text: String) -> Result<String> {
+    if text != "-" {
+        return Ok(text);
+    }
+    Ok(std::io::read_to_string(std::io::stdin())?)
 }
 
 fn tree(conn: &Connection, p: &Project, task: Option<&TaskRef>, ls: bool) -> Result<String> {

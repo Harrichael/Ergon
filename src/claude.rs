@@ -8,6 +8,7 @@ use anyhow::{Context, Result, bail};
 use rusqlite::{Connection, params};
 use serde::Serialize;
 
+use crate::landings::{self, At};
 use crate::on_path;
 use crate::project::Project;
 use crate::task::{Status, Tasks};
@@ -153,13 +154,9 @@ pub fn work(
                 list.join(", ")
             );
         }
-        let reference = tasks.reference(ids[0]);
         let dir = PathBuf::from(dir);
         if !dir.is_dir() {
-            bail!(
-                "{reference}'s session directory {} no longer exists",
-                dir.display()
-            );
+            return landing_session(&tasks, &ids, &dir, warning);
         }
         if conversation_saved(session) {
             return Ok(Launch {
@@ -194,6 +191,51 @@ pub fn work(
         args: vec!["--session-id".into(), session, prompt],
         warning,
     })
+}
+
+/// Where work on tasks goes on once the folder their session began in is
+/// gone, as after `choros land archive`: in the landing folder of the one
+/// open set that carries them, which choros opens a session in.
+fn landing_session(tasks: &Tasks, ids: &[i64], dir: &Path, warning: Option<String>) -> Result<Launch> {
+    let reference = tasks.reference(ids[0]);
+    let gone = format!("{reference}'s session directory {} no longer exists", dir.display());
+    let Some(near) = landings::still_there(dir) else {
+        bail!("{gone}");
+    };
+    let Some(all) = landings::read(near).with_context(|| gone.clone())? else {
+        bail!("{gone}");
+    };
+    // The sets of the tasks themselves: one that carries only a subtask
+    // is a piece landed along the way.
+    let mut open: Vec<(&str, u32)> = all
+        .iter()
+        .filter(|l| l.is_open() && ids.iter().any(|&id| l.carries(tasks, id)))
+        .filter_map(|l| match &l.at {
+            At::Set { queue, n } => Some((queue.as_str(), *n)),
+            At::Main { .. } => None,
+        })
+        .collect();
+    open.sort();
+    open.dedup();
+    match open.as_slice() {
+        [] => bail!("{gone}, and no open landing set carries it"),
+        [(queue, n)] => Ok(Launch {
+            program: PathBuf::from("choros"),
+            cwd: near.to_path_buf(),
+            args: vec!["landing".into(), "open".into(), n.to_string(), "--queue".into(), queue.to_string()],
+            warning,
+        }),
+        several => {
+            let commands: Vec<String> = several
+                .iter()
+                .map(|(queue, n)| format!("choros landing open {n} --queue {queue}"))
+                .collect();
+            bail!(
+                "{gone}, and several open landing sets carry it; open one:\n  {}",
+                commands.join("\n  ")
+            )
+        }
+    }
 }
 
 /// Records an already running session on tasks, as `ergon work` does when
@@ -564,11 +606,20 @@ here: workspace demo-ws
 trunk: /src
 ```
 
-`choros help agent` says how to work in it. Pass each task a land carries to
-`choros land` as `--label`, by its reference (like
-`--label demo/{n}`): `ergon show` finds a land's tasks by these
-labels. If this session began in a choros workspace, don't run
-`choros land archive` or `choros archive` on it.
+`choros help agent` says how to work in it. Each `choros land` tells ergon
+what it lands, so name the tasks a land carries with `--label`, by their
+references (like `--label demo/{n}`); with none named, it
+carries the tasks of this session.
+
+- `choros land continue` lands a piece. This workspace stays and the task
+  stays in_progress. A subtask the land carries is set to landing for you,
+  unless work under it is still open.
+- `choros land archive` lands the last of the work: the task is set to
+  landing for you and this workspace is archived. It is refused while a
+  subtask is still todo or in_progress. `ergon work` then opens the set's
+  landing folder, where review fixes go.
+
+Don't run `choros archive` on this workspace.
 
 ## Start
 
