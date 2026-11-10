@@ -1,18 +1,19 @@
-//! Choros's land hook: what `choros land` runs before and after each land
-//! (`land = "ergon land-hook"` in a trunk's `.choros-config/hooks.toml`),
-//! so one command lands the work and moves its tasks.
+//! Choros's land hook for a workspace bound to tasks: what `choros land`
+//! runs before and after each land from it (`ergon land-hook --task REFS`,
+//! set by `ergon work` when it makes the workspace), so one command lands
+//! the work and moves its tasks.
 //!
 //! A land carries the tasks its labels name, or with none named, the ones
-//! its Claude Code session is recorded on. Before the land, choros is told
-//! them all as labels, the most urgent priority among them, and a PR body
-//! that names them. After it:
+//! the workspace is bound to. Before the land, choros is told them all as
+//! labels, the most urgent priority among them, and a PR body that names
+//! them. After it:
 //!
-//! - `choros land continue` is a piece of work that goes on: the tasks
-//!   being worked on stay as they are, and a subtask of one, carried by
-//!   the land, goes to landing.
-//! - `choros land archive` is the last of it: every carried task goes to
-//!   landing. It is refused while a subtask of one, or another task of the
-//!   same session, is still open, since the workspace goes with it.
+//! - `choros land continue` is a piece of work that goes on: the bound
+//!   tasks stay as they are, and a subtask of one, carried by the land,
+//!   goes to landing.
+//! - `choros land archive` is the last of it, and takes the workspace: the
+//!   bound tasks and whatever else it carries go to landing. It is refused
+//!   while work under them is still open.
 //!
 //! A land can't be taken back, so what would be refused afterwards is
 //! refused before.
@@ -43,7 +44,6 @@ pub struct Told {
     pub priority: Option<String>,
     pub title: Option<String>,
     pub body: Option<String>,
-    pub session: Option<String>,
 }
 
 /// What choros should land with instead.
@@ -71,54 +71,72 @@ struct Part {
     unfinished: Vec<(i64, i64)>,
 }
 
-/// The tasks `told` carries, by project, and what becomes of them. Labels
-/// that name no project of ours are some other tool's. `gate` refuses an
-/// archive with work still open; once the land is made there is nothing
-/// left to refuse.
-fn parts(conn: &Connection, told: &Told, gate: bool) -> Result<Vec<Part>> {
+/// The tasks `told` carries, by project, and what becomes of them, for a
+/// workspace bound to `bound`. Labels that name no project of ours are
+/// some other tool's. `gate` refuses an archive with work still open; once
+/// the land is made there is nothing left to refuse.
+fn parts(conn: &Connection, told: &Told, bound: &[TaskRef], gate: bool) -> Result<Vec<Part>> {
     let projects = project::list(conn, true)?;
     let mut carried: BTreeMap<i64, Vec<i64>> = BTreeMap::new();
     let mut loaded: BTreeMap<i64, (Project, Tasks)> = BTreeMap::new();
     for p in &projects {
         loaded.insert(p.id, (p.clone(), Tasks::load(conn, p)?));
     }
-    for label in &told.labels {
-        let Ok(r) = TaskRef::exact(label) else {
-            continue;
-        };
+    let find = |r: &TaskRef, what: &str| -> Result<Option<(i64, i64)>> {
         let Some(p) = projects
             .iter()
             .find(|p| Some(&p.name) == r.project.as_ref())
         else {
-            continue;
+            return Ok(None);
         };
         let tasks = &loaded[&p.id].1;
-        let id = tasks
-            .live(&r.slug)
-            .with_context(|| format!("--label {label}"))?
-            .id;
-        // The root is the plan, not work a land carries.
-        if id != tasks.root().id {
-            carried.entry(p.id).or_default().push(id);
-        }
+        let id = tasks.live(&r.slug).with_context(|| what.to_string())?.id;
+        Ok(Some((p.id, id)))
+    };
+    // A bound task that can't be found would otherwise be passed over, and
+    // its workspace's lands would move nothing without a word.
+    const UNBIND: &str = "this workspace is bound to it by its land hook; \
+                          `choros hook land none` unbinds it";
+    let mut workspace_of: BTreeMap<i64, Vec<i64>> = BTreeMap::new();
+    for r in bound {
+        let Some((p, id)) = find(r, UNBIND)? else {
+            bail!(
+                "no project {:?} ({UNBIND})",
+                r.project.as_deref().unwrap_or("")
+            );
+        };
+        workspace_of.entry(p).or_default().push(id);
     }
-    // An archive takes the workspace, so it is of the session's tasks
-    // whatever else it names.
-    if (carried.is_empty() || told.mode == Mode::Archive)
-        && let Some(session) = told.session.as_deref()
-    {
-        for (id, (_, tasks)) in &loaded {
-            let mine = of_session(tasks, session);
-            if !mine.is_empty() {
-                carried.entry(*id).or_default().extend(mine);
+    for label in &told.labels {
+        let Ok(r) = TaskRef::exact(label) else {
+            continue;
+        };
+        if let Some((p, id)) = find(&r, &format!("--label {label}"))? {
+            // The root is the plan, not work a land carries.
+            if id != loaded[&p].1.root().id {
+                carried.entry(p).or_default().push(id);
             }
         }
+    }
+    // An archive takes the workspace, so it is of the tasks the workspace
+    // is for, whatever else it names.
+    if carried.is_empty() || told.mode == Mode::Archive {
+        for (p, ids) in &workspace_of {
+            let tasks = &loaded[p].1;
+            let open = ids
+                .iter()
+                .copied()
+                .filter(|&id| tasks.effective_status(id).is_open());
+            carried.entry(*p).or_default().extend(open);
+        }
+        carried.retain(|_, ids| !ids.is_empty());
     }
     carried
         .into_iter()
         .map(|(id, ids)| {
             let (project, tasks) = loaded.remove(&id).expect("loaded above");
-            part(project, tasks, ids, told.mode, gate)
+            let bound = workspace_of.remove(&id).unwrap_or_default();
+            part(project, tasks, ids, &bound, told.mode, gate)
         })
         .collect()
 }
@@ -127,6 +145,7 @@ fn part(
     project: Project,
     tasks: Tasks,
     mut carried: Vec<i64>,
+    bound: &[i64],
     mode: Mode,
     gate: bool,
 ) -> Result<Part> {
@@ -148,14 +167,10 @@ fn part(
         Mode::Continue => carried
             .iter()
             .copied()
-            // A step of work under way, not a task with a session of its
-            // own: that one is still being worked on.
+            // A step of the work the workspace is for: that work itself
+            // goes on.
             .filter(|&id| {
-                tasks.get(id).claude_session.is_none()
-                    && tasks
-                        .ancestors(id)
-                        .iter()
-                        .any(|&a| a != root && tasks.get(a).claude_session.is_some())
+                !bound.contains(&id) && tasks.ancestors(id).iter().any(|a| bound.contains(a))
             })
             .filter(
                 |&id| match tasks.descendants(id).into_iter().find(|&d| open(d)) {
@@ -173,12 +188,6 @@ fn part(
                 .flat_map(|&id| tasks.descendants(id))
                 .filter(|&id| open(id))
                 .collect();
-            left.extend(
-                carried
-                    .iter()
-                    .filter_map(|&id| tasks.get(id).claude_session.as_deref())
-                    .flat_map(|s| of_session(&tasks, s)),
-            );
             left.retain(|id| !carried.contains(id));
             left.sort();
             left.dedup();
@@ -208,18 +217,6 @@ fn part(
     })
 }
 
-/// The open tasks `session` is recorded on, but for the root: its session
-/// plans, and what it lands is no task's work.
-fn of_session(tasks: &Tasks, session: &str) -> Vec<i64> {
-    tasks
-        .all()
-        .into_iter()
-        .filter(|t| !t.is_deleted() && !t.is_root() && t.claude_session.as_deref() == Some(session))
-        .filter(|t| tasks.effective_status(t.id).is_open())
-        .map(|t| t.id)
-        .collect()
-}
-
 /// Sets `ids` to landing, all or none, by the rules every change keeps.
 /// With `keep` false, only tries it.
 fn set_landing(conn: &mut Connection, project: &Project, ids: &[i64], keep: bool) -> Result<()> {
@@ -239,8 +236,8 @@ fn set_landing(conn: &mut Connection, project: &Project, ids: &[i64], keep: bool
 
 /// Before a land: what to land with, or `None` when it carries no task of
 /// ours. Fails when the statuses the land would bring couldn't be set.
-pub fn before(conn: &mut Connection, told: &Told) -> Result<Option<Reply>> {
-    let parts = parts(conn, told, true)?;
+pub fn before(conn: &mut Connection, told: &Told, bound: &[TaskRef]) -> Result<Option<Reply>> {
+    let parts = parts(conn, told, bound, true)?;
     if parts.is_empty() {
         return Ok(None);
     }
@@ -306,9 +303,9 @@ pub fn before(conn: &mut Connection, told: &Told) -> Result<Option<Reply>> {
 
 /// After a land: sets the statuses. Returns a line for each thing worth
 /// telling whoever landed.
-pub fn after(conn: &mut Connection, told: &Told) -> Result<Vec<String>> {
+pub fn after(conn: &mut Connection, told: &Told, bound: &[TaskRef]) -> Result<Vec<String>> {
     let mut said = Vec::new();
-    for p in parts(conn, told, false)? {
+    for p in parts(conn, told, bound, false)? {
         set_landing(conn, &p.project, &p.to_landing, true)
             .context("the work landed, but its tasks couldn't be set to landing")?;
         for &id in p.to_landing.iter().rev() {

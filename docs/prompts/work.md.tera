@@ -17,6 +17,8 @@
   choros_here what `choros here` printed in the session's folder, or
               null when choros isn't installed or that folder isn't in a
               choros space
+  bound       whether that folder is a workspace `ergon work` made for
+              the tasks, whose lands move them
 
   `text | indent(with=PREFIX)` puts PREFIX before every non-blank line.
 
@@ -58,6 +60,14 @@ These are the ancestor tasks which may help frame your work:
 These are ergon tasks; change them with the `ergon` CLI (`ergon help` lists
 its commands, `ergon tree` shows each task's reference). As the work goes:
 
+{%- if bound %}
+
+- `choros land` from this workspace sets these tasks' statuses; don't set
+  them to landing yourself.
+- `ergon work` resumes this session only from the folder it began in, so
+  don't move that folder, and archive it only with `choros land archive`.
+{%- else %}
+
 - Once all of a task's work is landed or in PRs, set it to landing:
   `ergon edit REF --status landing`.
 - Until then, leave it in_progress, and set each subtask whose work is all
@@ -65,6 +75,7 @@ its commands, `ergon tree` shows each task's reference). As the work goes:
 - Name the task references (like {{ tasks.0.reference }}) in each PR's title or body.
 - `ergon work` resumes this session only from the folder it began in, so
   don't move or archive that folder.
+{%- endif %}
 {%- if choros_here %}
 
 ## Choros
@@ -75,20 +86,26 @@ This session's folder is in a choros space. `choros here` says:
 {{ choros_here }}
 ```
 
-`choros help agent` says how to work in it. Each `choros land` tells ergon
-what it lands, so name the tasks a land carries with `--label`, by their
-references (like `--label {{ tasks.0.reference }}`); with none named, it
-carries the tasks of this session.
+`choros help agent` says how to work in it.
+  {%- if bound %} This workspace is bound to
+{% if tasks | length > 1 %}these tasks{% else %}this task{% endif %}: each `choros land` from it tells ergon what it lands.
 
-- `choros land continue` lands a piece. This workspace stays and the task
-  stays in_progress. A subtask the land carries is set to landing for you,
-  unless work under it is still open.
+- `choros land continue` lands a piece. The workspace stays and the task
+  stays in_progress. Name a subtask the piece finishes with `--label`, by
+  its reference as `ergon tree` shows it, and it is set to landing, unless
+  work under it is still open.
 - `choros land archive` lands the last of the work: the task is set to
-  landing for you and this workspace is archived. It is refused while a
-  subtask is still todo or in_progress. `ergon work` then opens the set's
-  landing folder, where review fixes go.
+  landing and the workspace is archived. It is refused while a subtask is
+  still todo or in_progress. `ergon work` then opens the set's landing
+  folder, where review fixes go.
 
 Don't run `choros archive` on this workspace.
+  {%- else %} Pass each task a land carries to
+`choros land` as `--label`, by its reference (like
+`--label {{ tasks.0.reference }}`): `ergon show` finds a land's tasks by these
+labels. If this session began in a choros workspace, don't run
+`choros land archive` or `choros archive` on it.
+  {%- endif %}
 {%- endif %}
 
 ## Start

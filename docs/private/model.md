@@ -128,10 +128,14 @@ goes wrong.
 
 **Open** means `todo` or `in_progress`. **Closed** means `done` or `cancelled`.
 
-`ergon land-hook`, run by `choros land` as a trunk's land hook, turns the
-tasks a land carries to `landing`: every one on `choros land archive`, and on
-`choros land continue` only a subtask of a task being worked on, since that
-task goes on.
+Where choros makes workspaces, `ergon work` starts a task's session in a
+workspace of its own and binds it to the task: the workspace's land hook is
+`ergon land-hook --task <refs>`, which `choros land` runs. It turns the tasks
+a land carries to `landing`: every one on `choros land archive`, and on
+`choros land continue` only a subtask of a bound task, since that task goes
+on. The repos come from `--repos`, else the project's default in
+`.ergon/config.toml` (`ergon project repos`); a project with settings keeps
+`.ergon` as a folder, its UUID in `.ergon/project`.
 
 `ergon ls` and `ergon show` turn a `landing` task `done` once choros reports
 every landing set that carries it, or a task under it, as merged, and at

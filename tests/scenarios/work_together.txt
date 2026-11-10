@@ -132,13 +132,8 @@ $ ergon work 9cDQ,qxpj/nope
 error: no project named "qxpj"
 [exit 1]
 $ ergon work
-error: the following required arguments were not provided:
-  <TASKS|--interactive>
-
-Usage: ergon work <TASKS|--interactive>
-
-For more information, try '--help'.
-[exit 2]
+error: which tasks? name them, or pick them with -i
+[exit 1]
 
 # `ergon work -` reads the tasks from stdin, as piped from `ergon ls`. With
 # nothing there, nothing starts.

@@ -267,18 +267,35 @@ enum Command {
     /// that every one of them records. Once they have it, `ergon work` on any
     /// of them resumes it.
     ///
+    /// Where choros makes workspaces (a trunk or a branch-space of its),
+    /// a session that starts gets a workspace of its own, bound to the
+    /// tasks: `choros land` from it then moves them (see `ergon help
+    /// land-hook`). Its repos are --repos, else the project's default
+    /// (`ergon project repos`); with neither, starting is refused. Inside
+    /// a workspace, or away from choros, the session starts in this folder.
+    ///
     /// The session resumes only from the folder it began in. Once that is
     /// gone, as after `choros land archive`, this opens the landing folder
     /// of the open set that carries the tasks instead (`choros landing
     /// open`).
-    #[command(group(clap::ArgGroup::new("which").required(true).args(["tasks", "interactive"])))]
     Work {
         /// Comma-separated, or `-` to read them from stdin, as in
         /// `ergon ls --attention ..3 | ergon work -`.
         tasks: Option<WorkTasks>,
-        /// Pick the tasks from `ergon ls` instead.
+        /// Ask for what isn't given: the tasks, from `ergon ls`; the new
+        /// workspace's repos; which landing set to open when several
+        /// carry the tasks.
         #[arg(short, long)]
         interactive: bool,
+        /// The repos to make the workspace with, as `REPO,REPO`.
+        #[arg(long, value_delimiter = ',', conflicts_with = "here")]
+        repos: Option<Vec<String>>,
+        /// The workspace's name (default: from the task's title).
+        #[arg(long, conflicts_with = "here")]
+        workspace: Option<String>,
+        /// Start the session in this folder, with no workspace.
+        #[arg(long)]
+        here: bool,
     },
     /// Record the Claude Code session you're in on a task, or on several
     ///
@@ -293,23 +310,28 @@ enum Command {
     },
     /// What `choros land` runs before and after a land, to move its tasks
     ///
-    /// Set it as a trunk's land hook, in `.choros-config/hooks.toml`:
-    ///
-    ///     land = "ergon land-hook"
+    /// `ergon work` sets it as the land hook of the workspace it makes
+    /// (`choros hook land "ergon land-hook --task REFS"`), which binds the
+    /// workspace to those tasks.
     ///
     /// A land carries the tasks its `--label`s name, or with none named,
-    /// the ones its Claude Code session is recorded on. Choros is told
-    /// them all as labels, the most urgent priority among them, and the
-    /// PR body with them named under it.
+    /// the ones the workspace is bound to. Choros is told them all as
+    /// labels, the most urgent priority among them, and the PR body with
+    /// them named under it.
     ///
-    /// After `choros land continue`, the tasks being worked on stay as they
-    /// are, and a subtask of one that the land carries is set to landing,
-    /// unless work under it is still open. After `choros land archive`,
-    /// every carried task is set to landing; the land is refused while a
-    /// subtask of one, or another task of the same session, is still todo
-    /// or in progress.
+    /// After `choros land continue`, the bound tasks stay as they are, and
+    /// a subtask of one that the land carries is set to landing, unless
+    /// work under it is still open. `choros land archive` takes the
+    /// workspace, so it carries the bound tasks whatever it names, and sets
+    /// all it carries to landing; it is refused while a subtask of one is
+    /// still todo or in progress.
     #[command(verbatim_doc_comment)]
-    LandHook { stage: Stage },
+    LandHook {
+        /// The tasks the workspace is bound to, as `project/slug,...`.
+        #[arg(long)]
+        task: TaskRefs,
+        stage: Stage,
+    },
     /// Print the prompt `ergon work` starts a session with
     ///
     /// Rendered from the tasks as they are now, not as they were when the
@@ -353,6 +375,11 @@ enum ProjectCommand {
     Retire { name: String },
     /// Undo `retire`.
     Unretire { name: String },
+    /// Show or set the choros repos `ergon work` makes a workspace with
+    ///
+    /// The default for the project this folder is in, kept in
+    /// `.ergon/config.toml`. Given `REPO,REPO`, sets it; `none` clears it.
+    Repos { repos: Option<String> },
 }
 
 /// The tasks `ergon work` was given, or `-` for the ones piped in.
@@ -516,7 +543,7 @@ fn run(cli: Cli) -> Result<()> {
             println!("Created project {} in {}", p.name, cwd.display());
             if !no_launch {
                 let root = [project::ROOT_SLUG.to_string()];
-                launch(claude::work(&mut conn, &p, &root, &cwd)?, None)?;
+                launch(claude::work(&mut conn, &p, &root, &cwd, false)?, None)?;
             }
         }
         Command::Project(cmd) => run_project(&conn, cmd)?,
@@ -805,7 +832,13 @@ fn run(cli: Cli) -> Result<()> {
                 println!("Imported {name} ({tasks} task{s})");
             }
         }
-        Command::Work { tasks, .. } => {
+        Command::Work {
+            tasks,
+            interactive,
+            repos,
+            workspace,
+            here,
+        } => {
             let (tasks, tty) = match tasks {
                 Some(WorkTasks::Given(t)) => (Some(t), None),
                 Some(WorkTasks::Stdin) => {
@@ -816,16 +849,52 @@ fn run(cli: Cli) -> Result<()> {
                     }
                     (Some(t), Some(terminal()?))
                 }
-                None => (None, None),
+                None if interactive => (None, None),
+                None => bail!("which tasks? name them, or pick them with -i"),
             };
             let refs: Vec<&TaskRef> = tasks.iter().flat_map(|t| t.iter()).collect();
             let p = project_for(&conn, &refs)?;
-            let l = match &tasks {
-                Some(t) => claude::work(&mut conn, &p, &t.slugs(), &cwd)?,
-                None => match picker::run(&mut conn, &p, &cwd)? {
-                    Some(l) => l,
+            let slugs = match &tasks {
+                Some(t) => t.slugs(),
+                None => match picker::run(&mut conn, &p)? {
+                    Some(slugs) => slugs,
                     None => return Ok(()),
                 },
+            };
+            let all = Tasks::load(&conn, &p)?;
+            let made = match claude::unstarted(&conn, &p, &slugs)? {
+                // The root's session plans; it has no work to land.
+                Some(ids) if !here && !ids.contains(&all.root().id) => {
+                    let repos = match repos {
+                        Some(given) => ergon::workspace::Repos::Given(given),
+                        None if interactive => ergon::workspace::Repos::Pick,
+                        None => {
+                            // This folder's project may not be the tasks'.
+                            let here = project::current(&conn, None, &cwd).ok();
+                            let config = match project::find_marker(&cwd) {
+                                Some(marker) if here.is_some_and(|h| h.id == p.id) => {
+                                    project::Config::read(&marker)?
+                                }
+                                _ => Default::default(),
+                            };
+                            ergon::workspace::Repos::Default(config.choros.repos)
+                        }
+                    };
+                    ergon::workspace::make(&all, &ids, &cwd, workspace.as_deref(), repos)?
+                }
+                _ => None,
+            };
+            let dir = made.as_deref().unwrap_or(&cwd);
+            let l = claude::work(&mut conn, &p, &slugs, dir, interactive);
+            let l = match &made {
+                Some(ws) => l.with_context(|| {
+                    format!(
+                        "the workspace {} was made and bound to the tasks, but their session \
+                         didn't start; `ergon work` again from inside it starts it there",
+                        ws.display()
+                    )
+                })?,
+                None => l?,
             };
             launch(l, tty)?;
         }
@@ -849,17 +918,17 @@ fn run(cli: Cli) -> Result<()> {
             print!("{}", claude::prompt(&all, &ids, &cwd));
         }
         Command::Help { .. } => unreachable!("handled above"),
-        Command::LandHook { stage } => {
+        Command::LandHook { task, stage } => {
             let told: land::Told = serde_json::from_reader(std::io::stdin())
                 .context("reading the land from stdin, as choros's land hook gives it")?;
             match stage {
                 Stage::Before => {
-                    if let Some(reply) = land::before(&mut conn, &told)? {
+                    if let Some(reply) = land::before(&mut conn, &told, &task.0)? {
                         println!("{}", serde_json::to_string(&reply)?);
                     }
                 }
                 Stage::After => {
-                    for line in land::after(&mut conn, &told)? {
+                    for line in land::after(&mut conn, &told, &task.0)? {
                         eprintln!("{line}");
                     }
                 }
@@ -991,6 +1060,26 @@ fn run_project(conn: &Connection, cmd: ProjectCommand) -> Result<()> {
         ProjectCommand::Rename { old, new } => project::rename(conn, &old, &new)?,
         ProjectCommand::Retire { name } => project::set_retired(conn, &name, true)?,
         ProjectCommand::Unretire { name } => project::set_retired(conn, &name, false)?,
+        ProjectCommand::Repos { repos } => {
+            let cwd = std::env::current_dir()?;
+            let marker = project::find_marker(&cwd)
+                .context("not in an ergon project (no .ergon found above here)")?;
+            let mut config = project::Config::read(&marker)?;
+            match repos {
+                None if config.choros.repos.is_empty() => println!("no default repos"),
+                None => println!("{}", config.choros.repos.join(",")),
+                Some(given) if given == "none" && marker.is_file() => {}
+                Some(given) => {
+                    config.choros.repos = given
+                        .split(',')
+                        .map(str::trim)
+                        .filter(|r| !r.is_empty() && *r != "none")
+                        .map(str::to_string)
+                        .collect();
+                    config.write(&marker)?;
+                }
+            }
+        }
     }
     Ok(())
 }

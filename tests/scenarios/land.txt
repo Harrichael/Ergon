@@ -1,6 +1,7 @@
-# `ergon land-hook` is what `choros land` runs before and after each land,
-# as a trunk's land hook, so that one command lands the work and moves its
-# tasks. Choros gives it the land as JSON; these are the parts ergon reads.
+# `ergon land-hook` is the land hook of a workspace `ergon work` made for
+# tasks: `choros land` runs it before and after each land from there, so
+# that one command lands the work and moves the tasks. Choros gives it the
+# land as JSON; these are the parts ergon reads.
 
 $ fake-choros <<EOF
 {"queues": [{"name": "q", "sets": [
@@ -22,15 +23,15 @@ pQyk
 $ ergon attach qxpj --session 0b5e0b5e-0000-4000-8000-000000000001
 attached session 0b5e0b5e-0000-4000-8000-000000000001 to demo/qxpj; `ergon prompt demo/qxpj` prints its instructions
 
-# A land that names no task carries the session's. Choros is told to label
-# the set with them, and the most urgent priority among them. A body that
-# was written gets the tasks named under it.
-$ ergon land-hook before <<EOF
-{"mode": "continue", "labels": [], "priority": null, "title": null, "body": "What changed.", "session": "0b5e0b5e-0000-4000-8000-000000000001"}
+# A land that names no task carries the ones the workspace is bound to.
+# Choros is told to label the set with them, and the most urgent priority
+# among them. A body that was written gets the tasks named under it.
+$ ergon land-hook --task demo/qxpj before <<EOF
+{"mode": "continue", "labels": [], "priority": null, "title": null, "body": "What changed."}
 EOF
 {"labels":["demo/qxpj"],"priority":"p1","body":"What changed.\n\nTasks:\n- demo/qxpj  Backend\n"}
-$ ergon land-hook after <<EOF
-{"mode": "continue", "labels": ["demo/qxpj"], "priority": "p1", "title": null, "body": "What changed.", "session": "0b5e0b5e-0000-4000-8000-000000000001"}
+$ ergon land-hook --task demo/qxpj after <<EOF
+{"mode": "continue", "labels": ["demo/qxpj"], "priority": "p1", "title": null, "body": "What changed."}
 EOF
 $ ergon tree
 root  in_progress  p-  Build a demo
@@ -39,19 +40,15 @@ root  in_progress  p-  Build a demo
     nHcx  in_progress  p1  Docs
       pQyk  todo         p1  Guide
 
-# A land that carries nothing of ergon's is left alone.
-$ ergon land-hook before <<EOF
-{"mode": "continue", "labels": ["JIRA-12"], "priority": null, "title": null, "body": null, "session": null}
+# A piece that carries a subtask of a bound task finishes it: the subtask
+# goes to landing, unless work under it is still open. The bound task
+# itself goes on, named or not.
+$ ergon land-hook --task demo/qxpj before <<EOF
+{"mode": "continue", "labels": ["demo/FTFE", "demo/nHcx", "demo/qxpj"], "priority": "p3", "title": "The API (demo/FTFE, demo/nHcx, demo/qxpj)", "body": "What changed."}
 EOF
-
-# A piece that carries a subtask of the task being worked on finishes it:
-# the subtask goes to landing, unless work under it is still open.
-$ ergon land-hook before <<EOF
-{"mode": "continue", "labels": ["demo/FTFE", "demo/nHcx"], "priority": "p3", "title": "The API (demo/FTFE, demo/nHcx)", "body": "What changed.", "session": null}
-EOF
-{"labels":["demo/FTFE","demo/nHcx"]}
-$ ergon land-hook after <<EOF
-{"mode": "continue", "labels": ["demo/FTFE", "demo/nHcx"], "priority": "p3", "title": "The API (demo/FTFE, demo/nHcx)", "body": "What changed.", "session": null}
+{"labels":["demo/FTFE","demo/nHcx","demo/qxpj"]}
+$ ergon land-hook --task demo/qxpj after <<EOF
+{"mode": "continue", "labels": ["demo/FTFE", "demo/nHcx", "demo/qxpj"], "priority": "p3", "title": "The API (demo/FTFE, demo/nHcx, demo/qxpj)", "body": "What changed."}
 EOF
 demo/FTFE is now landing
 demo/nHcx stays in_progress: demo/pQyk under it is still open
@@ -62,48 +59,28 @@ root  in_progress  p-  Build a demo
     nHcx  in_progress  p1  Docs
       pQyk  todo         p1  Guide
 
-# A subtask with a session of its own is being worked on there, so a piece
-# of it leaves it as it is.
-$ ergon attach nHcx --session 0b5e0b5e-0000-4000-8000-000000000002
-attached session 0b5e0b5e-0000-4000-8000-000000000002 to demo/nHcx; `ergon prompt demo/nHcx` prints its instructions
-$ ergon land-hook after <<EOF
-{"mode": "continue", "labels": ["demo/nHcx"], "priority": null, "title": null, "body": null, "session": "0b5e0b5e-0000-4000-8000-000000000002"}
-EOF
-$ ergon land-hook before <<EOF
-{"mode": "archive", "labels": [], "priority": null, "title": null, "body": null, "session": "0b5e0b5e-0000-4000-8000-000000000002"}
+# `choros land archive` says the work is all out and takes the workspace,
+# so it carries the bound tasks whatever its labels name, and is refused,
+# before anything lands, while a subtask is open.
+$ ergon land-hook --task demo/qxpj before <<EOF
+{"mode": "archive", "labels": ["demo/FTFE"], "priority": null, "title": null, "body": null}
 EOF
 error: `choros land archive` says the work here is all out, but these are still open: demo/pQyk (todo). Finish or cancel them, set them to landing, or name them with --label to land them with it; `choros land continue` keeps the workspace
 [exit 1]
 $ ergon edit pQyk --status cancelled
-$ ergon land-hook after <<EOF
-{"mode": "archive", "labels": ["demo/nHcx"], "priority": null, "title": null, "body": null, "session": "0b5e0b5e-0000-4000-8000-000000000002"}
-EOF
-demo/nHcx is now landing
-
-# `choros land archive` says the work is all out, so it is refused, before
-# anything lands, while a subtask is open. It carries the session's tasks
-# whatever its labels name.
-$ ergon add Tests --parent qxpj --status todo
-9cDQ
-$ ergon land-hook before <<EOF
-{"mode": "archive", "labels": ["demo/FTFE"], "priority": null, "title": null, "body": null, "session": "0b5e0b5e-0000-4000-8000-000000000001"}
-EOF
-error: `choros land archive` says the work here is all out, but these are still open: demo/9cDQ (todo). Finish or cancel them, set them to landing, or name them with --label to land them with it; `choros land continue` keeps the workspace
-[exit 1]
-$ ergon edit 9cDQ --status done
 
 # A label that looks like a task of ours and isn't is a slip to fix.
-$ ergon land-hook before <<EOF
-{"mode": "continue", "labels": ["demo/ErgN"], "priority": null, "title": null, "body": null, "session": null}
+$ ergon land-hook --task demo/qxpj before <<EOF
+{"mode": "archive", "labels": ["demo/ErgN"], "priority": null, "title": null, "body": null}
 EOF
 error: --label demo/ErgN: no task demo/ErgN
 [exit 1]
-$ ergon land-hook before <<EOF
-{"mode": "archive", "labels": ["demo/FTFE"], "priority": null, "title": null, "body": null, "session": "0b5e0b5e-0000-4000-8000-000000000001"}
+$ ergon land-hook --task demo/qxpj before <<EOF
+{"mode": "archive", "labels": ["demo/FTFE"], "priority": null, "title": null, "body": null}
 EOF
 {"labels":["demo/FTFE","demo/qxpj"],"priority":"p1"}
-$ ergon land-hook after <<EOF
-{"mode": "archive", "labels": ["demo/FTFE", "demo/qxpj"], "priority": "p1", "title": null, "body": null, "session": "0b5e0b5e-0000-4000-8000-000000000001"}
+$ ergon land-hook --task demo/qxpj after <<EOF
+{"mode": "archive", "labels": ["demo/FTFE", "demo/qxpj"], "priority": "p1", "title": null, "body": null}
 EOF
 demo/qxpj is now landing
 $ ergon tree
@@ -112,7 +89,14 @@ root  in_progress  p-  Build a demo
     FTFE  landing      p1  API
     nHcx  landing      p1  Docs
       pQyk  cancelled    p1  Guide
-    9cDQ  done         p1  Tests
+
+# A binding to a task that can't be found refuses the land and says how to
+# drop it, where passing it over would land without moving anything.
+$ ergon land-hook --task gone/qxpj before <<EOF
+{"mode": "continue", "labels": [], "priority": null, "title": null, "body": null}
+EOF
+error: no project "gone" (this workspace is bound to it by its land hook; `choros hook land none` unbinds it)
+[exit 1]
 
 # With the workspace gone, `ergon work` goes on in the landing folder of the
 # open set that carries the task itself, not a piece of it.

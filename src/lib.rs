@@ -16,6 +16,7 @@ pub mod slug;
 pub mod suggest;
 pub mod task;
 pub mod view;
+pub mod workspace;
 
 use rand::SeedableRng;
 use rand::rngs::StdRng;

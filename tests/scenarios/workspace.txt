@@ -1,0 +1,213 @@
+# Where choros makes workspaces, `ergon work` starts a task's session in a
+# workspace of its own, bound to the task: its land hook is
+# `ergon land-hook` for that task, so `choros land` from it moves the task.
+
+$ cd space
+$ fake-choros <<EOF
+{"queues": []}
+EOF
+$ ergon init demo "Build a demo" --no-launch
+Created project demo in $ROOT/space
+$ ergon add "Backend: the API, and its docs"
+qxpj
+$ ergon add Frontend
+FTFE
+
+# It needs to know which repos, and doesn't guess.
+$ CHOROS_KIND=branch-space ergon work qxpj
+error: no repos to make the workspace backend_the_api_and with: pass --repos REPO,…, pick them with -i, or set the project's default with `ergon project repos REPO,…`. --here starts the session in this folder instead
+[exit 1]
+$ CHOROS_KIND=branch-space ergon work qxpj --repos app,lib
+[choros in $ROOT/space/backend_the_api_and]
+hook
+land
+ergon land-hook --task demo/qxpj
+[claude in $ROOT/space/backend_the_api_and]
+--session-id
+da34548b-56e9-41c2-98a8-7a0c1a8f4993
+## Context
+
+These are the ancestor tasks which may help frame your work:
+
+- Build a demo
+
+## Your Task (demo/qxpj)
+
+Backend: the API, and its docs
+
+## Ergon
+
+These are ergon tasks; change them with the `ergon` CLI (`ergon help` lists
+its commands, `ergon tree` shows each task's reference). As the work goes:
+
+- `choros land` from this workspace sets these tasks' statuses; don't set
+  them to landing yourself.
+- `ergon work` resumes this session only from the folder it began in, so
+  don't move that folder, and archive it only with `choros land archive`.
+
+## Choros
+
+This session's folder is in a choros space. `choros here` says:
+
+```
+here: workspace backend_the_api_and
+```
+
+`choros help agent` says how to work in it. This workspace is bound to
+this task: each `choros land` from it tells ergon what it lands.
+
+- `choros land continue` lands a piece. The workspace stays and the task
+  stays in_progress. Name a subtask the piece finishes with `--label`, by
+  its reference as `ergon tree` shows it, and it is set to landing, unless
+  work under it is still open.
+- `choros land archive` lands the last of the work: the task is set to
+  landing and the workspace is archived. It is refused while a subtask is
+  still todo or in_progress. `ergon work` then opens the set's landing
+  folder, where review fixes go.
+
+Don't run `choros archive` on this workspace.
+
+## Start
+
+Ask the user how they'd like to start.
+
+[choros in $ROOT/space]
+work
+backend_the_api_and
+app
+lib
+
+# The project can keep a default, in .ergon/config.toml; --repos still
+# overrides it, and -i picks them in choros's own picker.
+$ ergon project repos
+no default repos
+$ ergon project repos app
+$ ergon project repos
+app
+$ CHOROS_KIND=branch-space ergon work FTFE --workspace ui
+[choros in $ROOT/space/ui]
+hook
+land
+ergon land-hook --task demo/FTFE
+[claude in $ROOT/space/ui]
+--session-id
+9487b132-9170-4b0c-ad01-fba48316f5e9
+## Context
+
+These are the ancestor tasks which may help frame your work:
+
+- Build a demo
+
+## Your Task (demo/FTFE)
+
+Frontend
+
+## Ergon
+
+These are ergon tasks; change them with the `ergon` CLI (`ergon help` lists
+its commands, `ergon tree` shows each task's reference). As the work goes:
+
+- `choros land` from this workspace sets these tasks' statuses; don't set
+  them to landing yourself.
+- `ergon work` resumes this session only from the folder it began in, so
+  don't move that folder, and archive it only with `choros land archive`.
+
+## Choros
+
+This session's folder is in a choros space. `choros here` says:
+
+```
+here: workspace ui
+```
+
+`choros help agent` says how to work in it. This workspace is bound to
+this task: each `choros land` from it tells ergon what it lands.
+
+- `choros land continue` lands a piece. The workspace stays and the task
+  stays in_progress. Name a subtask the piece finishes with `--label`, by
+  its reference as `ergon tree` shows it, and it is set to landing, unless
+  work under it is still open.
+- `choros land archive` lands the last of the work: the task is set to
+  landing and the workspace is archived. It is refused while a subtask is
+  still todo or in_progress. `ergon work` then opens the set's landing
+  folder, where review fixes go.
+
+Don't run `choros archive` on this workspace.
+
+## Start
+
+Ask the user how they'd like to start.
+
+[choros in $ROOT/space]
+work
+ui
+app
+$ ergon show FTFE
+demo/FTFE  Frontend
+status:    in_progress
+priority:  p-
+blocked:   no
+parent:    demo/root  Build a demo
+created:   2025-10-09 08:53 (just now)
+updated:   2025-10-09 08:53 (just now)
+session:   9487b132-9170-4b0c-ad01-fba48316f5e9 in $ROOT/space/ui
+delete:    ergon rm demo/FTFE --subtasks 0 --dependents 0
+
+Frontend
+
+# Resuming goes back to the workspace, from anywhere.
+$ cd elsewhere
+$ ergon work demo/FTFE
+[claude in $ROOT/space/ui]
+--resume
+9487b132-9170-4b0c-ad01-fba48316f5e9
+
+# --here starts the session in this folder, as does being inside a
+# workspace already, or away from choros.
+$ cd space
+$ ergon add Docs
+nHcx
+$ CHOROS_KIND=branch-space ergon work nHcx --here
+[claude in $ROOT/space]
+--session-id
+40c36389-4853-48dc-8055-cbe828f74d4b
+## Context
+
+These are the ancestor tasks which may help frame your work:
+
+- Build a demo
+
+## Your Task (demo/nHcx)
+
+Docs
+
+## Ergon
+
+These are ergon tasks; change them with the `ergon` CLI (`ergon help` lists
+its commands, `ergon tree` shows each task's reference). As the work goes:
+
+- Once all of a task's work is landed or in PRs, set it to landing:
+  `ergon edit REF --status landing`.
+- Until then, leave it in_progress, and set each subtask whose work is all
+  landed or in PRs to landing.
+- Name the task references (like demo/nHcx) in each PR's title or body.
+- `ergon work` resumes this session only from the folder it began in, so
+  don't move or archive that folder.
+
+## Choros
+
+This session's folder is in a choros space. `choros here` says:
+
+```
+here: workspace space
+```
+
+`choros help agent` says how to work in it. Pass each task a land carries to
+`choros land` as `--label`, by its reference (like
+`--label demo/nHcx`): `ergon show` finds a land's tasks by these
+labels. If this session began in a choros workspace, don't run
+`choros land archive` or `choros archive` on it.
+
+## Start
+
+Ask the user how they'd like to start.

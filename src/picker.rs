@@ -3,7 +3,6 @@
 //! highlighted row. A refusal stays in the picker, shown under the list.
 
 use std::fs::{File, OpenOptions};
-use std::path::Path;
 use std::sync::Once;
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -18,7 +17,7 @@ use ratatui::text::Span;
 use ratatui::widgets::{Block, Borders, List, ListItem, ListState, Paragraph, Wrap};
 use rusqlite::Connection;
 
-use crate::claude::{self, Launch};
+use crate::claude;
 use crate::derived::Derived;
 use crate::project::Project;
 use crate::task::Tasks;
@@ -136,9 +135,9 @@ impl Picker {
     }
 }
 
-/// Runs the picker and prepares the session for what was picked, or `None`
-/// if it was cancelled.
-pub fn run(conn: &mut Connection, project: &Project, cwd: &Path) -> Result<Option<Launch>> {
+/// Runs the picker, returning the tasks picked once they are ones a
+/// session can take on together, or `None` if it was cancelled.
+pub fn run(conn: &mut Connection, project: &Project) -> Result<Option<Vec<String>>> {
     let tasks = Tasks::load(conn, project)?;
     let mut picker = Picker::new(&tasks, &Derived::compute(&tasks));
     let title = format!(" ergon work: {} ", project.name);
@@ -154,10 +153,51 @@ pub fn run(conn: &mut Connection, project: &Project, cwd: &Path) -> Result<Optio
             match picker.key(key) {
                 Action::Stay => {}
                 Action::Quit => return Ok(None),
-                Action::Start(slugs) => match claude::work(conn, project, &slugs, cwd) {
-                    Ok(launch) => return Ok(Some(launch)),
+                Action::Start(slugs) => match claude::unstarted(conn, project, &slugs) {
+                    Ok(_) => return Ok(Some(slugs)),
                     Err(e) => picker.error = Some(format!("{e:#}")),
                 },
+            }
+        }
+    })
+}
+
+/// Asks for one of `rows`, returning its index, or `None` if cancelled.
+pub fn choose(title: &str, rows: &[String]) -> Result<Option<usize>> {
+    let mut cursor = 0;
+    with_tui(|terminal| {
+        loop {
+            terminal.draw(|f| {
+                let [list, help] =
+                    Layout::vertical([Constraint::Min(1), Constraint::Length(1)]).areas(f.area());
+                let mut state = ListState::default();
+                state.select(Some(cursor));
+                let widget = List::new(rows.iter().map(|r| ListItem::new(r.as_str())))
+                    .block(Block::default().title(title).borders(Borders::ALL))
+                    .highlight_style(Style::default().bg(Color::DarkGray))
+                    .highlight_symbol("> ");
+                f.render_stateful_widget(widget, list, &mut state);
+                f.render_widget(
+                    Paragraph::new(Span::styled(
+                        "Enter: open   Esc: cancel",
+                        Style::default().fg(Color::DarkGray),
+                    )),
+                    help,
+                );
+            })?;
+            let Event::Key(key) = event::read()? else {
+                continue;
+            };
+            if key.kind == KeyEventKind::Release {
+                continue;
+            }
+            match key.code {
+                KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => return Ok(None),
+                KeyCode::Esc | KeyCode::Char('q') => return Ok(None),
+                KeyCode::Char('j') | KeyCode::Down => cursor = (cursor + 1) % rows.len(),
+                KeyCode::Char('k') | KeyCode::Up => cursor = cursor.checked_sub(1).unwrap_or(rows.len() - 1),
+                KeyCode::Enter => return Ok(Some(cursor)),
+                _ => {}
             }
         }
     })

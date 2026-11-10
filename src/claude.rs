@@ -99,6 +99,46 @@ pub fn selection(tasks: &Tasks, slugs: &[String]) -> Result<Vec<i64>> {
     Ok(ids)
 }
 
+/// The tasks `slugs` name, if `ergon work` on them would start a session
+/// and not resume one. Fails where `work` would refuse them, and when
+/// there is no claude to start it with: what is made for a new session
+/// shouldn't be made for one that can't begin.
+pub fn unstarted(conn: &Connection, project: &Project, slugs: &[String]) -> Result<Option<Vec<i64>>> {
+    find_claude()?;
+    let tasks = Tasks::load(conn, project)?;
+    let ids = selection(&tasks, slugs)?;
+    Ok(shared_session(&tasks, &ids)?.is_none().then_some(ids))
+}
+
+/// The session `ids` all hold, and its folder; `None` when none holds one.
+fn shared_session<'a>(tasks: &'a Tasks, ids: &[i64]) -> Result<Option<(&'a str, &'a str)>> {
+    let sessions: Vec<(&str, &str)> = ids
+        .iter()
+        .filter_map(|&id| {
+            let t = tasks.get(id);
+            Some((t.claude_session.as_deref()?, t.claude_cwd.as_deref()?))
+        })
+        .collect();
+    let Some(&first) = sessions.first() else {
+        return Ok(None);
+    };
+    if sessions.len() < ids.len() || sessions.iter().any(|s| s.0 != first.0) {
+        let list: Vec<String> = ids
+            .iter()
+            .map(|&id| {
+                let t = tasks.get(id);
+                let s = t.claude_session.as_deref().unwrap_or("no session");
+                format!("{} ({s})", tasks.reference(id))
+            })
+            .collect();
+        bail!(
+            "these tasks don't share one session, so they can't be worked on together: {}",
+            list.join(", ")
+        );
+    }
+    Ok(Some(first))
+}
+
 /// Prepares `ergon work` for one task or several taken on together. The
 /// first time, records one new session with `cwd` on all of them and moves
 /// `todo` ones to `in_progress`; afterwards, resumes that session in its
@@ -111,6 +151,7 @@ pub fn work(
     project: &Project,
     slugs: &[String],
     cwd: &Path,
+    interactive: bool,
 ) -> Result<Launch> {
     let program = find_claude()?;
     let tx = conn.transaction()?;
@@ -132,31 +173,10 @@ pub fn work(
         .collect();
     let warning = (!warnings.is_empty()).then(|| warnings.join("\nwarning: "));
 
-    let sessions: Vec<(&str, &str)> = ids
-        .iter()
-        .filter_map(|&id| {
-            let t = tasks.get(id);
-            Some((t.claude_session.as_deref()?, t.claude_cwd.as_deref()?))
-        })
-        .collect();
-    if let Some(&(session, dir)) = sessions.first() {
-        if sessions.len() < ids.len() || sessions.iter().any(|s| s.0 != session) {
-            let list: Vec<String> = ids
-                .iter()
-                .map(|&id| {
-                    let t = tasks.get(id);
-                    let s = t.claude_session.as_deref().unwrap_or("no session");
-                    format!("{} ({s})", tasks.reference(id))
-                })
-                .collect();
-            bail!(
-                "these tasks don't share one session, so they can't be worked on together: {}",
-                list.join(", ")
-            );
-        }
+    if let Some((session, dir)) = shared_session(&tasks, &ids)? {
         let dir = PathBuf::from(dir);
         if !dir.is_dir() {
-            return landing_session(&tasks, &ids, &dir, warning);
+            return landing_session(&tasks, &ids, &dir, warning, interactive);
         }
         if conversation_saved(session) {
             return Ok(Launch {
@@ -196,7 +216,13 @@ pub fn work(
 /// Where work on tasks goes on once the folder their session began in is
 /// gone, as after `choros land archive`: in the landing folder of the one
 /// open set that carries them, which choros opens a session in.
-fn landing_session(tasks: &Tasks, ids: &[i64], dir: &Path, warning: Option<String>) -> Result<Launch> {
+fn landing_session(
+    tasks: &Tasks,
+    ids: &[i64],
+    dir: &Path,
+    warning: Option<String>,
+    interactive: bool,
+) -> Result<Launch> {
     let reference = tasks.reference(ids[0]);
     let gone = format!("{reference}'s session directory {} no longer exists", dir.display());
     let Some(near) = landings::still_there(dir) else {
@@ -217,21 +243,36 @@ fn landing_session(tasks: &Tasks, ids: &[i64], dir: &Path, warning: Option<Strin
         .collect();
     open.sort();
     open.dedup();
+    let launch = |(queue, n): (&str, u32)| Launch {
+        program: PathBuf::from("choros"),
+        cwd: near.to_path_buf(),
+        args: vec!["landing".into(), "open".into(), n.to_string(), "--queue".into(), queue.to_string()],
+        warning: warning.clone(),
+    };
     match open.as_slice() {
         [] => bail!("{gone}, and no open landing set carries it"),
-        [(queue, n)] => Ok(Launch {
-            program: PathBuf::from("choros"),
-            cwd: near.to_path_buf(),
-            args: vec!["landing".into(), "open".into(), n.to_string(), "--queue".into(), queue.to_string()],
-            warning,
-        }),
+        [only] => Ok(launch(*only)),
+        several if interactive => {
+            let rows: Vec<String> = several
+                .iter()
+                .map(|(queue, n)| {
+                    let set = all.iter().find(|l| matches!(&l.at, At::Set { queue: q, n: m } if q == queue && m == n));
+                    let pr = set.and_then(|l| l.pr).map_or(String::new(), |pr| format!("  #{pr}"));
+                    format!("{queue}  landing-{n}  {}{pr}", set.map_or("", |l| l.repo.as_str()))
+                })
+                .collect();
+            match crate::picker::choose(&format!(" {reference}: which landing set? "), &rows)? {
+                Some(i) => Ok(launch(several[i])),
+                None => bail!("cancelled"),
+            }
+        }
         several => {
             let commands: Vec<String> = several
                 .iter()
                 .map(|(queue, n)| format!("choros landing open {n} --queue {queue}"))
                 .collect();
             bail!(
-                "{gone}, and several open landing sets carry it; open one:\n  {}",
+                "{gone}, and several open landing sets carry it; open one, or pick with -i:\n  {}",
                 commands.join("\n  ")
             )
         }
@@ -346,7 +387,7 @@ pub fn prompt(tasks: &Tasks, ids: &[i64], cwd: &Path) -> String {
                 .map(Path::new)
                 .filter(|d| d.is_dir())
                 .unwrap_or(cwd);
-            work_prompt(tasks, ids, choros_here(dir).as_deref())
+            work_prompt(tasks, ids, choros_here(dir).as_deref(), bound(tasks, ids, dir))
         }
     }
 }
@@ -418,7 +459,33 @@ struct Assigned<'a> {
     subtasks: Vec<Outlined<'a>>,
 }
 
-fn work_prompt(tasks: &Tasks, ids: &[i64], choros_here: Option<&str>) -> String {
+/// Whether `dir` is in a workspace bound to these tasks: one whose land
+/// hook is ergon's, for them. A session started in a workspace made for
+/// other tasks isn't: lands from there move those.
+fn bound(tasks: &Tasks, ids: &[i64], dir: &Path) -> bool {
+    #[derive(serde::Deserialize)]
+    struct Here {
+        land_hook: Option<String>,
+    }
+    on_path(Path::new("choros"))
+        .and_then(|_| {
+            std::process::Command::new("choros")
+                .args(["here", "--json"])
+                .current_dir(dir)
+                .output()
+                .ok()
+        })
+        .filter(|o| o.status.success())
+        .and_then(|o| serde_json::from_slice::<Here>(&o.stdout).ok())
+        .and_then(|h| h.land_hook)
+        .and_then(|hook| hook.strip_prefix(crate::workspace::HOOK).map(str::to_string))
+        .is_some_and(|refs| {
+            let refs: Vec<&str> = refs.split(',').collect();
+            ids.iter().all(|&id| refs.contains(&tasks.reference(id).as_str()))
+        })
+}
+
+fn work_prompt(tasks: &Tasks, ids: &[i64], choros_here: Option<&str>, bound: bool) -> String {
     // Every task's ancestors, merged into one outline in tree order, so
     // tasks that share a parent share its context.
     let wanted: std::collections::HashSet<i64> =
@@ -450,6 +517,7 @@ fn work_prompt(tasks: &Tasks, ids: &[i64], choros_here: Option<&str>) -> String 
     ctx.insert("ancestors", &ancestors);
     ctx.insert("tasks", &assigned);
     ctx.insert("choros_here", &choros_here);
+    ctx.insert("bound", &bound);
     let mut tera = tera::Tera::default();
     tera.register_filter("indent", indent);
     tera.add_raw_template("work.md", WORK_TEMPLATE)
@@ -524,7 +592,7 @@ mod tests {
         let n = add(&mut conn, Some(&c), "Nested\nOne level down.");
 
         let tasks = Tasks::load(&conn, &p).unwrap();
-        let prompt = work_prompt(&tasks, &[tasks.live(&b).unwrap().id], None);
+        let prompt = work_prompt(&tasks, &[tasks.live(&b).unwrap().id], None, false);
         assert_eq!(
             prompt,
             format!(
@@ -574,7 +642,7 @@ Ask the user how they'd like to start.
         // In a choros space, the session is told where it is and how to
         // label its lands.
         let here = "here: workspace demo-ws\ntrunk: /src";
-        let leaf = work_prompt(&tasks, &[tasks.live(&n).unwrap().id], Some(here));
+        let leaf = work_prompt(&tasks, &[tasks.live(&n).unwrap().id], Some(here), false);
         assert!(leaf.ends_with(&format!(
             "        Versioned.
 
@@ -606,20 +674,11 @@ here: workspace demo-ws
 trunk: /src
 ```
 
-`choros help agent` says how to work in it. Each `choros land` tells ergon
-what it lands, so name the tasks a land carries with `--label`, by their
-references (like `--label demo/{n}`); with none named, it
-carries the tasks of this session.
-
-- `choros land continue` lands a piece. This workspace stays and the task
-  stays in_progress. A subtask the land carries is set to landing for you,
-  unless work under it is still open.
-- `choros land archive` lands the last of the work: the task is set to
-  landing for you and this workspace is archived. It is refused while a
-  subtask is still todo or in_progress. `ergon work` then opens the set's
-  landing folder, where review fixes go.
-
-Don't run `choros archive` on this workspace.
+`choros help agent` says how to work in it. Pass each task a land carries to
+`choros land` as `--label`, by its reference (like
+`--label demo/{n}`): `ergon show` finds a land's tasks by these
+labels. If this session began in a choros workspace, don't run
+`choros land archive` or `choros archive` on it.
 
 ## Start
 
@@ -629,7 +688,7 @@ Ask the user how they'd like to start.
 
         // Tasks taken on together are numbered.
         let ids = [tasks.live(&d).unwrap().id, tasks.live(&n).unwrap().id];
-        let both = work_prompt(&tasks, &ids, None);
+        let both = work_prompt(&tasks, &ids, None, false);
         assert!(both.contains(&format!("## Your Task 1 of 2 (demo/{d})\n\nAuth\n")));
         assert!(both.contains(&format!("## Your Task 2 of 2 (demo/{n})\n\nNested\n")));
     }

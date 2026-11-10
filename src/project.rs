@@ -5,9 +5,70 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result, bail};
 use rusqlite::{Connection, OptionalExtension, Row, params};
 
-/// The file that ties a directory tree to a project. It holds the project's
-/// UUID on a single line.
+/// What ties a directory tree to a project: a file holding the project's
+/// UUID on a single line, or once the project has settings, a folder with
+/// that file as `project` and the settings as `config.toml`.
 pub const MARKER: &str = ".ergon";
+const MARKER_ID: &str = "project";
+const MARKER_CONFIG: &str = "config.toml";
+
+/// A project's settings, kept beside its marker so they travel with the
+/// folder: `.ergon/config.toml`.
+#[derive(Debug, Default, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Config {
+    #[serde(default, skip_serializing_if = "Choros::is_empty")]
+    pub choros: Choros,
+}
+
+#[derive(Debug, Default, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Choros {
+    /// The repos `ergon work` makes a task's workspace with, unless told
+    /// others.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub repos: Vec<String>,
+}
+
+impl Choros {
+    fn is_empty(&self) -> bool {
+        self.repos.is_empty()
+    }
+}
+
+impl Config {
+    /// The settings of the project `marker` ties its folder to.
+    pub fn read(marker: &Path) -> Result<Config> {
+        let path = marker.join(MARKER_CONFIG);
+        match std::fs::read_to_string(&path) {
+            Ok(text) => toml::from_str(&text).with_context(|| format!("reading {}", path.display())),
+            // A marker that is still a file has no settings either.
+            Err(_) if !path.exists() => Ok(Config::default()),
+            Err(e) => Err(e).with_context(|| format!("reading {}", path.display())),
+        }
+    }
+
+    /// Writes the settings, first making a marker that is still a file
+    /// into a folder.
+    pub fn write(&self, marker: &Path) -> Result<()> {
+        if marker.is_file() {
+            let id = std::fs::read_to_string(marker)
+                .with_context(|| format!("reading {}", marker.display()))?;
+            // Built aside and swapped in, so the project is never without
+            // its marker for longer than the two renames.
+            let aside = marker.with_extension("new");
+            // One left by a run that was cut short.
+            let _ = std::fs::remove_dir_all(&aside);
+            std::fs::create_dir(&aside).with_context(|| format!("creating {}", aside.display()))?;
+            std::fs::write(aside.join(MARKER_ID), id)?;
+            std::fs::remove_file(marker)?;
+            std::fs::rename(&aside, marker)?;
+        }
+        let path = marker.join(MARKER_CONFIG);
+        std::fs::write(&path, toml::to_string_pretty(self)?)
+            .with_context(|| format!("writing {}", path.display()))
+    }
+}
 
 /// The root task's fixed slug.
 pub const ROOT_SLUG: &str = crate::slug::ROOT;
@@ -175,12 +236,12 @@ pub fn set_retired(conn: &Connection, name: &str, retired: bool) -> Result<()> {
     Ok(())
 }
 
-/// The nearest `.ergon` file in `start` or one of its ancestors.
+/// The nearest `.ergon` in `start` or one of its ancestors.
 pub fn find_marker(start: &Path) -> Option<PathBuf> {
     start
         .ancestors()
         .map(|dir| dir.join(MARKER))
-        .find(|marker| marker.is_file())
+        .find(|marker| marker.is_file() || marker.join(MARKER_ID).is_file())
 }
 
 /// The project named by `--project`, or else by the nearest `.ergon` file
@@ -194,8 +255,9 @@ pub fn current(conn: &Connection, flag: Option<&str>, cwd: &Path) -> Result<Proj
             "not in an ergon project (no {MARKER} file found); use --project or run `ergon init`"
         );
     };
-    let contents = std::fs::read_to_string(&marker)
-        .with_context(|| format!("reading {}", marker.display()))?;
+    let id = if marker.is_dir() { marker.join(MARKER_ID) } else { marker.clone() };
+    let contents =
+        std::fs::read_to_string(&id).with_context(|| format!("reading {}", id.display()))?;
     by_uuid(conn, contents.trim()).with_context(|| format!("resolving {}", marker.display()))
 }
 
