@@ -67,6 +67,8 @@ pub fn make(
     let mut work = Command::new("choros");
     work.arg("work")
         .current_dir(cwd)
+        // Its picker reads keys.
+        .stdin(Stdio::inherit())
         .stdout(Stdio::piped())
         .stderr(Stdio::inherit());
     match repos {
@@ -85,7 +87,7 @@ pub fn make(
     let made = work.output().context("running choros work")?;
     let dir = String::from_utf8_lossy(&made.stdout).trim().to_string();
     if !made.status.success() {
-        bail!("choros couldn't make the workspace {name}; --workspace NAME gives it another name");
+        bail!("choros couldn't make the workspace {name}: what it said is above");
     }
     if dir.is_empty() {
         bail!("cancelled: no workspace was made");
