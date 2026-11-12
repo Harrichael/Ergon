@@ -61,9 +61,9 @@ this task: each `choros land` from it tells ergon what it lands.
   its reference as `ergon tree` shows it, and it is set to landing, unless
   work under it is still open.
 - `choros land archive` lands the last of the work: the task is set to
-  landing and the workspace is archived. It is refused while a subtask is
-  still todo or in_progress. `ergon work` then opens the set's landing
-  folder, where review fixes go.
+  landing, and the workspace is archived once this session closes. It is
+  refused while a subtask is still todo or in_progress. `ergon work` then
+  opens the set's landing folder, where review fixes go.
 
 Don't run `choros archive` on this workspace.
 
@@ -128,9 +128,9 @@ this task: each `choros land` from it tells ergon what it lands.
   its reference as `ergon tree` shows it, and it is set to landing, unless
   work under it is still open.
 - `choros land archive` lands the last of the work: the task is set to
-  landing and the workspace is archived. It is refused while a subtask is
-  still todo or in_progress. `ergon work` then opens the set's landing
-  folder, where review fixes go.
+  landing, and the workspace is archived once this session closes. It is
+  refused while a subtask is still todo or in_progress. `ergon work` then
+  opens the set's landing folder, where review fixes go.
 
 Don't run `choros archive` on this workspace.
 
@@ -262,9 +262,9 @@ this task: each `choros land` from it tells ergon what it lands.
   its reference as `ergon tree` shows it, and it is set to landing, unless
   work under it is still open.
 - `choros land archive` lands the last of the work: the task is set to
-  landing and the workspace is archived. It is refused while a subtask is
-  still todo or in_progress. `ergon work` then opens the set's landing
-  folder, where review fixes go.
+  landing, and the workspace is archived once this session closes. It is
+  refused while a subtask is still todo or in_progress. `ergon work` then
+  opens the set's landing folder, where review fixes go.
 
 Don't run `choros archive` on this workspace.
 

@@ -95,9 +95,9 @@ This session's folder is in a choros space. `choros here` says:
   its reference as `ergon tree` shows it, and it is set to landing, unless
   work under it is still open.
 - `choros land archive` lands the last of the work: the task is set to
-  landing and the workspace is archived. It is refused while a subtask is
-  still todo or in_progress. `ergon work` then opens the set's landing
-  folder, where review fixes go.
+  landing, and the workspace is archived once this session closes. It is
+  refused while a subtask is still todo or in_progress. `ergon work` then
+  opens the set's landing folder, where review fixes go.
 
 Don't run `choros archive` on this workspace.
   {%- else %} Pass each task a land carries to
