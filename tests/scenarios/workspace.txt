@@ -211,3 +211,69 @@ labels. If this session began in a choros workspace, don't run
 ## Start
 
 Ask the user how they'd like to start.
+
+# -i picks the repos in choros's own picker, which reads the keyboard
+# ergon was given.
+$ ergon add Tests
+pQyk
+$ CHOROS_KIND=branch-space ergon work pQyk -i --workspace picked <<EOF
+app lib
+EOF
+[choros in $ROOT/space/picked]
+hook
+land
+ergon land-hook --task demo/pQyk
+[claude in $ROOT/space/picked]
+--session-id
+a85f0fd5-ffa8-4821-ad47-72577b2238ad
+## Context
+
+These are the ancestor tasks which may help frame your work:
+
+- Build a demo
+
+## Your Task (demo/pQyk)
+
+Tests
+
+## Ergon
+
+These are ergon tasks; change them with the `ergon` CLI (`ergon help` lists
+its commands, `ergon tree` shows each task's reference). As the work goes:
+
+- `choros land` from this workspace sets these tasks' statuses; don't set
+  them to landing yourself.
+- `ergon work` resumes this session only from the folder it began in, so
+  don't move that folder, and archive it only with `choros land archive`.
+
+## Choros
+
+This session's folder is in a choros space. `choros here` says:
+
+```
+here: workspace picked
+```
+
+`choros help agent` says how to work in it. This workspace is bound to
+this task: each `choros land` from it tells ergon what it lands.
+
+- `choros land continue` lands a piece. The workspace stays and the task
+  stays in_progress. Name a subtask the piece finishes with `--label`, by
+  its reference as `ergon tree` shows it, and it is set to landing, unless
+  work under it is still open.
+- `choros land archive` lands the last of the work: the task is set to
+  landing and the workspace is archived. It is refused while a subtask is
+  still todo or in_progress. `ergon work` then opens the set's landing
+  folder, where review fixes go.
+
+Don't run `choros archive` on this workspace.
+
+## Start
+
+Ask the user how they'd like to start.
+
+[choros in $ROOT/space]
+work
+-i
+picked
+picked: app lib

@@ -60,7 +60,11 @@ case "$1" in
   hook) printf '%s' "$3" > .choros-hook; printf '[choros in %s]\n' "$PWD"; printf '%s\n' "$@"; exit 0;;
   work)
     printf '[choros in %s]\n' "$PWD" >&2; printf '%s\n' "$@" >&2
-    [ "$2" = -i ] && shift
+    if [ "$2" = -i ]; then
+      shift
+      read -r picked || { echo "choros: Failed to initialize input reader" >&2; exit 1; }
+      printf 'picked: %s\n' "$picked" >&2
+    fi
     mkdir "$2" && cp .choros-status.json "$2" && printf '%s\n' "$PWD/$2"; exit;;
 esac
 if [ "$*" = "here --json" ]; then
