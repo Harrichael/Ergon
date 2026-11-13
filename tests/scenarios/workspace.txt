@@ -57,13 +57,15 @@ here: workspace backend_the_api_and
 this task: each `choros land` from it tells ergon what it lands.
 
 - `choros land continue` lands a piece. The workspace stays and the task
-  stays in_progress. Name a subtask the piece finishes with `--label`, by
-  its reference as `ergon tree` shows it, and it is set to landing, unless
-  work under it is still open.
-- `choros land archive` lands the last of the work: the task is set to
-  landing, and the workspace is archived once this session closes. It is
-  refused while a subtask is still todo or in_progress. `ergon work` then
-  opens the set's landing folder, where review fixes go.
+  stays in_progress, even if the land names it with `--label`. Name a
+  subtask the piece finishes with `--label`, by its reference as
+  `ergon tree` shows it, and it is set to landing, unless work under it is
+  still open.
+- `choros land archive` ends the work: it lands what is left, if anything
+  is, and sets the task to landing. Run it once the work is done, even with
+  everything landed already. It is refused while a subtask is still todo or
+  in_progress. The workspace is archived once this session closes;
+  `ergon work` then opens the set's landing folder, where review fixes go.
 
 Don't run `choros archive` on this workspace.
 
@@ -124,13 +126,15 @@ here: workspace ui
 this task: each `choros land` from it tells ergon what it lands.
 
 - `choros land continue` lands a piece. The workspace stays and the task
-  stays in_progress. Name a subtask the piece finishes with `--label`, by
-  its reference as `ergon tree` shows it, and it is set to landing, unless
-  work under it is still open.
-- `choros land archive` lands the last of the work: the task is set to
-  landing, and the workspace is archived once this session closes. It is
-  refused while a subtask is still todo or in_progress. `ergon work` then
-  opens the set's landing folder, where review fixes go.
+  stays in_progress, even if the land names it with `--label`. Name a
+  subtask the piece finishes with `--label`, by its reference as
+  `ergon tree` shows it, and it is set to landing, unless work under it is
+  still open.
+- `choros land archive` ends the work: it lands what is left, if anything
+  is, and sets the task to landing. Run it once the work is done, even with
+  everything landed already. It is refused while a subtask is still todo or
+  in_progress. The workspace is archived once this session closes;
+  `ergon work` then opens the set's landing folder, where review fixes go.
 
 Don't run `choros archive` on this workspace.
 
@@ -258,13 +262,15 @@ here: workspace picked
 this task: each `choros land` from it tells ergon what it lands.
 
 - `choros land continue` lands a piece. The workspace stays and the task
-  stays in_progress. Name a subtask the piece finishes with `--label`, by
-  its reference as `ergon tree` shows it, and it is set to landing, unless
-  work under it is still open.
-- `choros land archive` lands the last of the work: the task is set to
-  landing, and the workspace is archived once this session closes. It is
-  refused while a subtask is still todo or in_progress. `ergon work` then
-  opens the set's landing folder, where review fixes go.
+  stays in_progress, even if the land names it with `--label`. Name a
+  subtask the piece finishes with `--label`, by its reference as
+  `ergon tree` shows it, and it is set to landing, unless work under it is
+  still open.
+- `choros land archive` ends the work: it lands what is left, if anything
+  is, and sets the task to landing. Run it once the work is done, even with
+  everything landed already. It is refused while a subtask is still todo or
+  in_progress. The workspace is archived once this session closes;
+  `ergon work` then opens the set's landing folder, where review fixes go.
 
 Don't run `choros archive` on this workspace.
 
