@@ -65,6 +65,8 @@ $ fake-choros <<EOF
   ]
 }
 EOF
+$ ergon sync
+$ROOT/ws: 4 events from choros
 
 # A task's landings include those of the tasks under it.
 $ ergon show qxpj
@@ -121,7 +123,7 @@ $ ergon show --pr 999
 error: no landing set has PR #999
 [exit 1]
 
-# Where choros can't answer, show still shows the task.
+# A task worked outside any trunk has no landings to show.
 $ cd elsewhere
 $ ergon attach demo/pQyk --session 0b5e0b5e-0000-4000-8000-000000000002
 attached session 0b5e0b5e-0000-4000-8000-000000000002 to demo/pQyk; `ergon prompt demo/pQyk` prints its instructions
@@ -137,6 +139,3 @@ session:   0b5e0b5e-0000-4000-8000-000000000002 in $ROOT/elsewhere
 delete:    ergon rm demo/pQyk --subtasks 0 --dependents 0
 
 Frontend
-
-Landings:
-  can't read them: choros status failed in $ROOT/elsewhere: not under a choros trunk (no .choros-config above here)

@@ -70,6 +70,8 @@ $ fake-choros <<EOF
   ]
 }
 EOF
+$ ergon sync
+$ROOT/ws: 5 events from choros
 $ COLUMNS=108 ergon kanban
 todo (2)                   in_progress (1)            landing (5)                done (1 of 2)
 ─────────────────────────  ─────────────────────────  ─────────────────────────  ─────────────────────────

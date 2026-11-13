@@ -176,7 +176,7 @@ pub fn work(
     if let Some((session, dir)) = shared_session(&tasks, &ids)? {
         let dir = PathBuf::from(dir);
         if !dir.is_dir() {
-            return landing_session(&tasks, &ids, &dir, warning, interactive);
+            return landing_session(&tx, &tasks, &ids, &dir, warning, interactive);
         }
         if conversation_saved(session) {
             return Ok(Launch {
@@ -217,6 +217,7 @@ pub fn work(
 /// gone, as after `choros land archive`: in the landing folder of the one
 /// open set that carries them, which choros opens a session in.
 fn landing_session(
+    conn: &Connection,
     tasks: &Tasks,
     ids: &[i64],
     dir: &Path,
@@ -228,9 +229,17 @@ fn landing_session(
     let Some(near) = landings::still_there(dir) else {
         bail!("{gone}");
     };
-    let Some(all) = landings::read(near).with_context(|| gone.clone())? else {
-        bail!("{gone}");
+    if let Some(why) = crate::db::default_path().ok().and_then(|db| crate::sync::stale(&db)) {
+        anstream::eprintln!("warning: {why}");
+    }
+    let Some(mut all) = landings::all(conn)? else {
+        if !crate::sync::choros_installed() {
+            bail!("{gone}");
+        }
+        bail!("{gone}, and no landings have been read from choros (`ergon sync` reads them)");
     };
+    // A queue's name is its trunk's alone.
+    all.retain(|l| near.starts_with(&l.trunk));
     // The sets of the tasks themselves: one that carries only a subtask
     // is a piece landed along the way.
     let mut open: Vec<(&str, u32)> = all

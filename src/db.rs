@@ -23,6 +23,7 @@ const MIGRATIONS: &[Step] = &[
     Step::Sql(V3),
     Step::Sql(V4),
     Step::Sql(V5),
+    Step::Sql(V6),
 ];
 
 const BUSY_TIMEOUT: Duration = Duration::from_secs(5);
@@ -132,6 +133,19 @@ SELECT id, MAX(updated_at, COALESCE(deleted_at, updated_at)), parent_id, status,
        attention, deleted_at
 FROM tasks ORDER BY id;
 "#;
+const V6: &str = r#"
+-- Choros's landings, as its event logs last told them: one row a landing
+-- set or land straight to main, holding its latest line of `choros events`,
+-- and how far into each trunk's log ergon has read.
+CREATE TABLE landings (
+  trunk TEXT NOT NULL,
+  key   TEXT NOT NULL,
+  body  TEXT NOT NULL,
+  PRIMARY KEY (trunk, key)
+) STRICT;
+CREATE TABLE choros_logs (trunk TEXT PRIMARY KEY, seq INTEGER NOT NULL) STRICT;
+"#;
+
 /// `$ERGON_DB`, else `$XDG_DATA_HOME/ergon/ergon.db`, else
 /// `~/.local/share/ergon/ergon.db`.
 pub fn default_path() -> Result<PathBuf> {
@@ -596,6 +610,7 @@ mod tests {
             0x07e4_3aef_e5a3_812f,
             0xace8_128d_9a8e_f003,
             0xe188_582c_4ba9_8658,
+            0x3632_a82f_eb85_14bf,
         ];
         let hashes: Vec<u64> = MIGRATIONS
             .iter()

@@ -12,7 +12,7 @@
 use std::collections::{BTreeMap, HashMap};
 
 use crate::derived::{Derived, Sort};
-use crate::landings::{Landing, Seen};
+use crate::landings::{self, Landing};
 use crate::task::{Status, Tasks};
 
 /// A place on the board, in board order.
@@ -82,7 +82,7 @@ impl Board {
         derived: &Derived,
         leaves: bool,
         sort: Sort,
-        landings: &Seen,
+        landings: &[Landing],
         done: DoneSince,
     ) -> Board {
         let mut cards = Vec::new();
@@ -100,7 +100,7 @@ impl Board {
                 Status::Todo if derived.is_blocked(id) => Cell::Blocked,
                 Status::Todo => Cell::Ready,
                 Status::InProgress => Cell::InProgress,
-                Status::Landing => landing_cell(landings.of(id)),
+                Status::Landing => landing_cell(landings::carrying(tasks, id, landings)),
                 Status::Done if done.shows(tasks, id) => Cell::Done,
                 Status::Done => {
                     older_done += 1;
@@ -162,7 +162,7 @@ fn visit_leaves(tasks: &Tasks, id: i64, out: &mut Vec<i64>) {
 /// author is: a reply due, then a draft to finish, then work still queued,
 /// then review awaited; approved only once all its sets are. An approval
 /// outranks comments left unanswered: the reviewer is done, so they're nits.
-fn landing_cell(sets: Option<Vec<&Landing>>) -> Cell {
+fn landing_cell(sets: Vec<&Landing>) -> Cell {
     let rank = |c: &Cell| match c {
         Cell::Unanswered => 0,
         Cell::Draft => 1,
@@ -170,8 +170,7 @@ fn landing_cell(sets: Option<Vec<&Landing>>) -> Cell {
         Cell::Waiting => 3,
         _ => 4,
     };
-    sets.unwrap_or_default()
-        .into_iter()
+    sets.into_iter()
         .filter(|l| l.is_open())
         .map(|l| match (l.state.as_str(), l.review) {
             ("queued", _) => Cell::MergeQueue,

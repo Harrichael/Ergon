@@ -19,12 +19,16 @@
 //! - `$ cd <dir>` changes directory (created if missing) and `$ rmdir <dir>`
 //!   removes one; both are relative to the scenario's root.
 //! - `$ fake-choros <<EOF` puts a fake `choros` on PATH for the rest of the
-//!   scenario. Its `status --json --all` prints the JSON given here, and its
-//!   `here` names this directory as a workspace, when run in this directory;
-//!   both fail elsewhere. `here --json` calls that directory a workspace
-//!   too, or the kind in `CHOROS_KIND`. Its `landing`, `hook` and `work`
-//!   print the directory and arguments they were run with, and `work`
-//!   makes the folder it names.
+//!   scenario, with this directory a trunk of its (`trunks` lists them)
+//!   whose landings are now the ones in the JSON given here, written as
+//!   `choros status --json` writes them. Its `events` tells of each, and of
+//!   a set no longer among them as dropped; `ergon sync` reads that. Its
+//!   `here` names this directory as a workspace, and fails elsewhere.
+//!   `here --json` calls that directory a workspace too, or the kind in
+//!   `CHOROS_KIND`. Its `landing`, `hook` and `work` print the directory
+//!   and arguments they were run with, and `work` makes the folder it names.
+//!   From then on the scenario also stands in for a running `ergond`, as
+//!   far as holding its lock goes, until `$ stop-ergond`.
 //! - The expected output is every line up to the next `$ ` line, minus
 //!   trailing blank and comment lines. It's stdout, then stderr, then
 //!   `[exit N]` if the command failed. A line of just `...` matches any
@@ -53,7 +57,8 @@ if [ "$1" = --session-id ] && [ -z "$CRASH" ]; then
 fi
 "#;
 
-// Treats the directory `fake-choros` left its JSON in as a workspace.
+// Treats the directory `fake-choros` left its JSON in as a workspace, and
+// as a trunk whose event log is the file beside it.
 const FAKE_CHOROS: &str = r#"#!/bin/sh
 case "$1" in
   landing) printf '[choros in %s]\n' "$PWD"; printf '%s\n' "$@"; exit 0;;
@@ -76,9 +81,10 @@ if [ "$*" = "here --json" ]; then
   fi
   exit 0
 fi
-case "$*" in "status --json --all"|here) ;; *) echo "choros: fake choros can't $*" >&2; exit 2;; esac
+if [ "$1" = trunks ]; then cat "$0.trunks"; exit 0; fi
+case "$*" in "events --since "*|here) ;; *) echo "choros: fake choros can't $*" >&2; exit 2;; esac
 [ -f .choros-status.json ] || { echo "choros: not under a choros trunk (no .choros-config above here)" >&2; exit 1; }
-if [ "$1" = here ]; then printf 'here: workspace %s\n' "${PWD##*/}"; else cat .choros-status.json; fi
+if [ "$1" = here ]; then printf 'here: workspace %s\n' "${PWD##*/}"; else tail -n +$(($3 + 1)) .choros-events.jsonl; fi
 "#;
 
 struct Step {
@@ -209,6 +215,8 @@ struct Sandbox {
     cwd: PathBuf,
     /// Holds the fake `choros` once a scenario asks for it.
     bin: Option<PathBuf>,
+    /// The lock a running `ergond` holds.
+    ergond: Option<std::fs::File>,
 }
 
 impl Sandbox {
@@ -227,16 +235,69 @@ impl Sandbox {
             root,
             claude,
             bin: None,
+            ergond: None,
             _tmp: tmp,
         }
     }
 
     fn fake_choros(&mut self, status: &[String]) {
+        use serde_json::{Value, json};
         let bin = self.claude.with_file_name("bin");
         std::fs::create_dir_all(&bin).unwrap();
         write_script(&bin.join("choros"), FAKE_CHOROS);
-        std::fs::write(self.cwd.join(".choros-status.json"), status.join("\n")).unwrap();
-        self.bin = Some(bin);
+        self.bin = Some(bin.clone());
+        if self.ergond.is_none() {
+            self.ergond = ergon::sync::lock(&self.db).unwrap();
+        }
+
+        let trunks = bin.join("choros.trunks");
+        let mut listed = std::fs::read_to_string(&trunks).unwrap_or_default();
+        let line = format!("{}\n", self.cwd.display());
+        if !listed.contains(&line) {
+            listed.push_str(&line);
+            std::fs::write(&trunks, listed).unwrap();
+        }
+
+        // A set's key, with its event.
+        let events = |status: &str| -> Vec<(String, Value)> {
+            let status: Value = serde_json::from_str(status).expect("fake-choros takes JSON");
+            let mut out = Vec::new();
+            for q in status["queues"].as_array().into_iter().flatten() {
+                for set in q["sets"].as_array().into_iter().flatten() {
+                    out.push((
+                        format!("{}/{}", q["name"], set["n"]),
+                        json!({"queue": q["name"], "set": set}),
+                    ));
+                }
+            }
+            for i in status["instant"].as_array().into_iter().flatten() {
+                out.push((String::new(), json!({"instant": i})));
+            }
+            out
+        };
+        let status_file = self.cwd.join(".choros-status.json");
+        let status = status.join("\n");
+        let mut told = events(&status);
+        if let Ok(before) = std::fs::read_to_string(&status_file) {
+            for (key, mut event) in events(&before) {
+                if !key.is_empty() && !told.iter().any(|(k, _)| *k == key) {
+                    event["set"]["state"] = json!("dropped");
+                    told.push((key, event));
+                }
+            }
+        }
+        std::fs::write(&status_file, status).unwrap();
+
+        let log = self.cwd.join(".choros-events.jsonl");
+        let mut lines = std::fs::read_to_string(&log).unwrap_or_default();
+        let mut seq = lines.lines().count();
+        for (_, mut event) in told {
+            seq += 1;
+            event["seq"] = json!(seq);
+            event["trunk"] = json!(self.cwd);
+            lines.push_str(&format!("{event}\n"));
+        }
+        std::fs::write(&log, lines).unwrap();
     }
 
     fn run(&mut self, command: &str, stdin: Option<&[String]>) -> Vec<String> {
@@ -263,6 +324,10 @@ impl Sandbox {
             }
             "rmdir" => {
                 std::fs::remove_dir_all(self.root.join(&args[0])).unwrap();
+                Vec::new()
+            }
+            "stop-ergond" => {
+                self.ergond = None;
                 Vec::new()
             }
             "fake-choros" => {

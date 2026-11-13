@@ -11,6 +11,10 @@ cd "$HERE"
 # receipt is orphaned and the old binary along with it.
 PKG="ergon"
 BIN="ergon"
+# The daemon that follows choros's landings ships from the same crate.
+# Running it is dev-setup's job (a launchd agent, like chorosd); this only
+# puts it on PATH.
+DAEMON="ergond"
 
 INSTALL_DIR="${INSTALL_DIR:-$HOME/.local/bin}"
 STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/$PKG"
@@ -42,6 +46,7 @@ fi
 
 mkdir -p "$INSTALL_DIR" "$STATE_DIR"
 install -m 0755 "target/release/$BIN" "$INSTALL_DIR/$BIN"
+install -m 0755 "target/release/$DAEMON" "$INSTALL_DIR/$DAEMON"
 
 # Which clone deployed this? Any checkout anywhere can run this script and
 # become the live version, so record the source. Best-effort, because it must
@@ -50,8 +55,8 @@ install -m 0755 "target/release/$BIN" "$INSTALL_DIR/$BIN"
 commit="$(git -C "$HERE" rev-parse --short HEAD 2>/dev/null || echo unknown)"
 dirty=no
 [ -n "$(git -C "$HERE" status --porcelain 2>/dev/null)" ] && dirty=yes
-printf 'bin=%s\nsource=%s\ncommit=%s\ndirty=%s\n' \
-  "$INSTALL_DIR/$BIN" "$HERE" "$commit" "$dirty" > "$RECEIPT"
+printf 'bin=%s\ndaemon=%s\nsource=%s\ncommit=%s\ndirty=%s\n' \
+  "$INSTALL_DIR/$BIN" "$INSTALL_DIR/$DAEMON" "$HERE" "$commit" "$dirty" > "$RECEIPT"
 
 echo "==> installed: $INSTALL_DIR/$BIN ($commit$([ "$dirty" = yes ] && echo -dirty))"
 

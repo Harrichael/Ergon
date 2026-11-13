@@ -1,0 +1,91 @@
+# Ergon keeps its own copy of choros's landings, read from choros's event
+# log: by ergond as they change, or by `ergon sync`. Showing them asks
+# choros nothing, so what is shown is as of the last read.
+
+$ cd ws
+$ ergon init demo "Build a demo" --no-launch
+Created project demo in $ROOT/ws
+$ ergon add API
+qxpj
+$ ergon edit qxpj --status landing
+
+$ fake-choros <<EOF
+{"queues": [{"name": "appq", "sets": [
+  {"n": 1, "repo": "app", "state": "front", "pr": {"number": 7, "url": "u"},
+   "sessions": [], "labels": ["demo/qxpj"]},
+  {"n": 2, "repo": "app", "state": "queued", "pr": null,
+   "sessions": [], "labels": ["demo/qxpj"]}]}]}
+EOF
+
+# Nothing has been read yet.
+$ ergon show qxpj --merged
+demo/qxpj  API
+status:    landing
+priority:  p-
+blocked:   no
+parent:    demo/root  Build a demo
+created:   2025-10-09 08:53 (just now)
+updated:   2025-10-09 08:53 (just now)
+delete:    ergon rm demo/qxpj --subtasks 0 --dependents 0
+
+API
+$ ergon sync
+$ROOT/ws: 2 events from choros
+$ ergon show qxpj --merged
+demo/qxpj  API
+status:    landing
+priority:  p-
+blocked:   no
+parent:    demo/root  Build a demo
+created:   2025-10-09 08:53 (just now)
+updated:   2025-10-09 08:53 (just now)
+delete:    ergon rm demo/qxpj --subtasks 0 --dependents 0
+
+API
+
+Landings:
+  - appq  landing-1  front   app #7
+    choros landing open 1 --queue appq
+  - appq  landing-2  queued  app, no PR
+    choros landing open 2 --queue appq
+
+# Read to the end, there is nothing to say.
+$ ergon sync
+
+# Choros moves on: one set merges and the other is dropped. Ergon shows
+# what it last read until it reads again, and then the task is done.
+$ fake-choros <<EOF
+{"queues": [{"name": "appq", "sets": [
+  {"n": 1, "repo": "app", "state": "merged", "pr": {"number": 7, "url": "u"},
+   "sessions": [], "labels": ["demo/qxpj"]}]}]}
+EOF
+$ ergon tree
+root  in_progress  p-  Build a demo
+  qxpj  landing      p-  API
+$ ergon sync
+$ROOT/ws: 2 events from choros
+demo/qxpj done: its landings merged
+$ ergon show qxpj --merged
+demo/qxpj  API
+status:    done
+priority:  p-
+blocked:   no
+parent:    demo/root  Build a demo
+created:   2025-10-09 08:53 (just now)
+updated:   2025-10-09 08:53 (just now)
+delete:    ergon rm demo/qxpj --subtasks 0 --dependents 0
+
+API
+
+Landings:
+  - appq  landing-1  merged  app #7
+
+# With no ergond running, whatever shows landings says they may be behind.
+$ stop-ergond
+$ ergon ls
+warning: ergond isn't running, so landings may be out of date; `ergon sync` catches up
+$ ergon kanban
+todo (0)            in_progress (0)     landing (0)         done (1)
+──────────────────  ──────────────────  ──────────────────  ──────────────────
+                                                            qxpj API
+warning: ergond isn't running, so landings may be out of date; `ergon sync` catches up

@@ -7,6 +7,7 @@ $ cd ws
 $ fake-choros <<EOF
 {"landings": []}
 EOF
+$ ergon sync
 $ ergon init demo "Build a demo" --no-launch
 Created project demo in $ROOT/ws
 $ ergon add API

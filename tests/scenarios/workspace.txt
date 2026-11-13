@@ -6,6 +6,7 @@ $ cd space
 $ fake-choros <<EOF
 {"queues": []}
 EOF
+$ ergon sync
 $ ergon init demo "Build a demo" --no-launch
 Created project demo in $ROOT/space
 $ ergon add "Backend: the API, and its docs"

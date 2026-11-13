@@ -1,6 +1,7 @@
 # A landing task becomes done once every landing that carries it, or a task
-# under it, has merged; ls and show check as they read. Only landing tasks
-# move: a session's sets can carry tasks that still have work to land.
+# under it, has merged, by what `ergon sync` (or ergond) last read from
+# choros. Only landing tasks move: a session's sets can carry tasks that
+# still have work to land.
 
 $ cd ws
 $ ergon init demo "Build a demo" --no-launch
@@ -53,6 +54,10 @@ $ fake-choros <<EOF
   ]
 }
 EOF
+$ ergon sync
+$ROOT/ws: 5 events from choros
+demo/FTFE done: its landings merged
+demo/qxpj done: its landings merged
 
 # The API's set merged, so the API is done, and so is Payments, whose only
 # landing it was. Docs has no set of its own, but Payments being landing
@@ -61,8 +66,6 @@ EOF
 # Import.
 $ ergon ls
 pQyk  p-  in_progress  Search
-demo/FTFE done: its landings merged
-demo/qxpj done: its landings merged
 
 $ ergon tree
 root  in_progress  p-  Build a demo
@@ -90,6 +93,9 @@ $ fake-choros <<EOF
   ]
 }
 EOF
+$ ergon sync
+$ROOT/ws: 5 events from choros
+demo/9cDQ done: its landings merged
 $ ergon show 9cDQ
 demo/9cDQ  Billing
 status:    done
@@ -104,7 +110,6 @@ Billing
 
 Landings:
   2 merged (--merged lists them)
-demo/9cDQ done: its landings merged
 
 # A land straight to main makes no set; choros lists it under `instant`, and
 # it has merged by the time it's there.
@@ -117,6 +122,9 @@ $ fake-choros <<EOF
   ]
 }
 EOF
+$ ergon sync
+$ROOT/ws: 3 events from choros
+demo/qwpT done: its landings merged
 $ ergon show qwpT
 demo/qwpT  Import
 status:    done
@@ -131,7 +139,6 @@ Import
 
 Landings:
   1 merged (--merged lists them)
-demo/qwpT done: its landings merged
 
 # --merged lists the sets that have merged, not just their number.
 $ ergon show qwpT --merged

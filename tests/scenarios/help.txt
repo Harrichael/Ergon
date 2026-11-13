@@ -25,6 +25,7 @@ Usage: ergon [OPTIONS] <COMMAND>
 Commands:
   init       Create a project and its root task, write .ergon here, and launch the planner session
   project    Manage projects
+  sync       Read what choros's landings have come to
   add        Create a task and print its slug
   edit       Change a task's intent, status, priority, size or attention
   rm         Delete a task and its subtree. The counts must match `show`

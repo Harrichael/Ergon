@@ -39,6 +39,16 @@ enum Command {
     #[command(subcommand)]
     Project(ProjectCommand),
 
+    /// Read what choros's landings have come to
+    ///
+    /// Ergon keeps a copy of choros's landing sets, which `show` and
+    /// `kanban` read, and by which a landing task whose landings have all
+    /// merged is set to done. `ergond` keeps the copy up to date as choros
+    /// changes them (it follows `choros events` in every trunk); this
+    /// reads what it hasn't, for when it isn't running.
+    #[command(verbatim_doc_comment)]
+    Sync,
+
     /// Create a task and print its slug.
     Add {
         intent: String,
@@ -622,8 +632,12 @@ fn run(cli: Cli) -> Result<()> {
             pr: Some(pr),
             ..
         } => {
-            let Some(all) = landings::read(&cwd)? else {
-                bail!("choros isn't on PATH, so there are no landing sets to look in");
+            warn_if_stale();
+            let Some(all) = landings::all(&conn)? else {
+                if !ergon::sync::choros_installed() {
+                    bail!("choros isn't on PATH, so there are no landing sets to look in");
+                }
+                bail!("no landings have been read from choros yet; `ergon sync` reads them");
             };
             let sets: Vec<_> = all.iter().filter(|l| l.pr == Some(pr)).collect();
             if sets.is_empty() {
@@ -644,16 +658,16 @@ fn run(cli: Cli) -> Result<()> {
             let given = given.expect("clap requires a task without --pr");
             let p = project_for(&conn, &given.iter().collect::<Vec<_>>())?;
             if !intent {
-                finish_merged(&mut conn, &p, &cwd)?;
+                warn_if_stale();
+                finish_merged(&mut conn, &p)?;
             }
+            let all = landings::all(&conn)?;
             let tasks = Tasks::load(&conn, &p)?;
             let ids = given
                 .iter()
                 .map(|r| Ok(tasks.live(&r.slug)?.id))
                 .collect::<Result<Vec<i64>>>()?;
             let derived = Derived::compute(&tasks);
-            // Tasks worked in one folder share what choros says there.
-            let mut read = std::collections::HashMap::new();
             for (i, &id) in ids.iter().enumerate() {
                 if i > 0 {
                     println!();
@@ -665,13 +679,9 @@ fn run(cli: Cli) -> Result<()> {
                     println!("{}", tasks.get(id).intent);
                     continue;
                 }
-                let dir = landings::dir_for(&tasks, id).unwrap_or(&cwd);
-                let found = read
-                    .entry(dir)
-                    .or_insert_with(|| landings::read(dir).transpose());
                 print!(
                     "{}",
-                    view::show(&tasks, &derived, id, ergon::now(), found.as_ref(), merged)
+                    view::show(&tasks, &derived, id, ergon::now(), all.as_deref(), merged)
                 );
             }
         }
@@ -710,16 +720,11 @@ fn run(cli: Cli) -> Result<()> {
         Command::Kanban { sort, leaves, done } => {
             let sort = parse_sort(sort)?;
             let p = project_for(&conn, &[])?;
-            finish_merged(&mut conn, &p, &cwd)?;
+            warn_if_stale();
+            finish_merged(&mut conn, &p)?;
             let tasks = Tasks::load(&conn, &p)?;
             let derived = Derived::compute(&tasks);
-            let landing: Vec<i64> = tasks
-                .all()
-                .into_iter()
-                .filter(|t| !t.is_deleted() && tasks.effective_status(t.id) == Status::Landing)
-                .map(|t| t.id)
-                .collect();
-            let seen = landings::Seen::read(&tasks, &landing, &cwd);
+            let seen = landings::all(&conn)?.unwrap_or_default();
             let done_at = task::done_at(&conn, &p)?;
             let done = kanban::DoneSince {
                 since: done.0.map(|d| ergon::now() - i64::from(d) * 86_400),
@@ -758,7 +763,8 @@ fn run(cli: Cli) -> Result<()> {
                 statuses: status.map(|s| s.0),
             };
             let p = project_for(&conn, &task.iter().collect::<Vec<_>>())?;
-            finish_merged(&mut conn, &p, &cwd)?;
+            warn_if_stale();
+            finish_merged(&mut conn, &p)?;
             let tasks = Tasks::load(&conn, &p)?;
             let from = match &task {
                 Some(t) => tasks.live(&t.slug)?.id,
@@ -917,6 +923,11 @@ fn run(cli: Cli) -> Result<()> {
             let ids = claude::selection(&all, &tasks.slugs())?;
             print!("{}", claude::prompt(&all, &ids, &cwd));
         }
+        Command::Sync => {
+            for line in ergon::sync::run(&mut conn)? {
+                println!("{line}");
+            }
+        }
         Command::Help { .. } => unreachable!("handled above"),
         Command::LandHook { task, stage } => {
             let told: land::Told = serde_json::from_reader(std::io::stdin())
@@ -948,21 +959,20 @@ fn run(cli: Cli) -> Result<()> {
 
 /// Marks done each landing task whose landings have all merged. Only ever
 /// from landing: one session's sets can carry tasks that have more to land.
-fn finish_merged(conn: &mut Connection, p: &Project, cwd: &std::path::Path) -> Result<()> {
-    let tasks = Tasks::load(conn, p)?;
-    for id in landings::merged(&tasks, cwd) {
-        let r = tasks.reference(id);
-        let done = Changes {
-            status: Some(Some(Status::Done)),
-            ..Default::default()
-        };
-        // A side effect of reading, so it never stops the read.
-        match ops::edit(conn, p, &tasks.get(id).slug, done) {
-            Ok(_) => eprintln!("{r} done: its landings merged"),
-            Err(e) => eprintln!("couldn't mark {r} done: {e:#}"),
-        }
+fn finish_merged(conn: &mut Connection, p: &Project) -> Result<()> {
+    // A side effect of reading, so it never stops the read.
+    for line in ergon::sync::finish_merged(conn, p)? {
+        eprintln!("{line}");
     }
     Ok(())
+}
+
+/// Says so when nothing is keeping the landings about to be shown up to
+/// date.
+fn warn_if_stale() {
+    if let Some(why) = db::default_path().ok().and_then(|db| ergon::sync::stale(&db)) {
+        anstream::eprintln!("warning: {why}");
+    }
 }
 
 /// The terminal, for claude's stdin when the pipe took ours: a copy of

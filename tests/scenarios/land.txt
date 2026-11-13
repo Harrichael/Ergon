@@ -9,6 +9,8 @@ $ fake-choros <<EOF
   {"n": 4, "repo": "app", "state": "queued", "pr": null, "sessions": [], "labels": ["demo/qxpj"]}
 ]}]}
 EOF
+$ ergon sync
+$ROOT: 2 events from choros
 $ cd ws
 $ ergon init demo "Build a demo" --no-launch
 Created project demo in $ROOT/ws
